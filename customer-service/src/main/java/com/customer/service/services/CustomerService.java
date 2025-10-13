@@ -12,7 +12,7 @@ public interface CustomerService {
     Mono<CustomerResponse> registerCustomer(CustomerRequest customerRequest) throws CustomerCreationException;
     Mono<CustomerResponse> getCustomerById(String id);
     Mono<CustomerResponse> updateCustomer(String id, CustomerRequest customerRequest);
-    Mono<Void> deleteCustomer(Long id);
+    Mono<Void> deleteCustomer(String id);
     Mono<CustomerResponse> deactivateCustomer(String id);
     Mono<CustomerResponse> activateCustomer(Long id);
     Flux<CustomerResponse> getAllCustomers();

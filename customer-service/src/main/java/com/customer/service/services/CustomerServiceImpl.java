@@ -178,7 +178,7 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public Mono<Void> deleteCustomer(Long id) {
+    public Mono<Void> deleteCustomer(String id) {
         return customerRepository.findById(id)
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException("Customer not found with id: " + id)))
                 .flatMap(customer -> {
