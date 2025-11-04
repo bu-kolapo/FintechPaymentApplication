@@ -35,6 +35,7 @@
         <module>customer-service</module>
         <module>payment-service</module>
         <module>common-lib</module>
+        <module>auth-security</module>
     </modules>
 
     <!-- Dependency Management -->
