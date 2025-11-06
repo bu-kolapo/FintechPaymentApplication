@@ -28,7 +28,8 @@ public class SecurityConfiguration {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers("/api/v1/login").permitAll()
+//                        .pathMatchers("/api/v1/login").permitAll()
+                        .pathMatchers("/api/v1/register/customer").authenticated()
                         .anyExchange().authenticated())
                 .addFilterBefore(jwtRequestFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
@@ -53,11 +54,5 @@ public class SecurityConfiguration {
     }
 
 
-//    @Bean
-//    public CommandLineRunner testEncoder(PasswordEncoder passwordEncoder) {
-//        return args -> {
-//            String encoded = passwordEncoder.encode("password123");
-//            System.out.println("🔐 Encoded password: " + encoded);
-//        };
-//    }
+
 }

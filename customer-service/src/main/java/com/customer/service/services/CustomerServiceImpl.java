@@ -18,11 +18,14 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -44,21 +47,25 @@ public class CustomerServiceImpl implements CustomerService {
     @Value("${messaging.enabled:false}")
     private boolean messagingEnabled;
 
-    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate) {
+    private final WebClient accountClient;
+
+    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,WebClient.Builder webClientBuilder) {
         this.customerRepository = customerRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.rabbitTemplate = rabbitTemplate;
         this.messagingTemplate=messagingTemplate;
+        this.accountClient= webClientBuilder.baseUrl("http://localhost:8085/api/v1/account").build();
     }
 
     @Override
     public Mono<CustomerResponse> registerCustomer(CustomerRequest customerRequest) {
         // 1. Generate ID and build entity
-//        String customerId = UUID.randomUUID().toString();
+        String tenantId = UUID.randomUUID().toString();
+        System.out.println("TENANT ID" +tenantId);
 
         Customer customer = Customer.builder()
 //                .id(customerId)
-                .tenantId(customerRequest.getTenantId())
+                .tenantId(tenantId)
                 .firstName(customerRequest.getFirstName())
                 .lastName(customerRequest.getLastName())
                 .email(customerRequest.getEmail())
@@ -251,23 +258,32 @@ public class CustomerServiceImpl implements CustomerService {
 
     @Override
     public Mono<CustomerResponse> addAccountToCustomer(String customerId, String accountId) {
-        return customerRepository.findById(customerId)
-                .switchIfEmpty(Mono.error(new CustomerNotFoundException("Customer not found with id: " + customerId)))
-                .flatMap(customer -> {
-                    if (customer.getAccountIds() == null) {
-                        customer.setAccountIds(new ArrayList<>());
-                    }
-                    if (!customer.getAccountIds().contains(accountId)) {
-                        customer.getAccountIds().add(accountId);
-                        customer.setUpdatedAt(Instant.now());
-                        return customerRepository.save(customer);
-                    }
-                    return Mono.just(customer);
-                })
-                .flatMap(updatedCustomer -> {
-                    publishEvents(updatedCustomer, "ACCOUNT_ADDED");
-                    return Mono.just(mapToResponse(updatedCustomer, "Account added successfully"));
-                });
+        // Step 1: Fetch account from Account Service to validate it exists
+        Mono<Map> accountMono = accountClient.get()
+                .uri("/{id}", accountId)
+                .retrieve()
+                .bodyToMono(Map.class);
+
+        return accountMono.flatMap(account ->
+                customerRepository.findById(customerId)
+                        .switchIfEmpty(Mono.error(new CustomerNotFoundException("Customer not found with id: " + customerId)))
+                        .flatMap(customer -> {
+                            if (customer.getAccountIds() == null) {
+                                customer.setAccountIds(new ArrayList<>());
+                            }
+                            if (!customer.getAccountIds().contains(accountId)) {
+                                customer.getAccountIds().add(accountId);
+                                customer.setUpdatedAt(Instant.now());
+                                return customerRepository.save(customer);
+                            }
+                            return Mono.just(customer);
+                        })
+                        .flatMap(updatedCustomer -> {
+                            // Optional: publish an event that an account was added
+                            publishEvents(updatedCustomer, "ACCOUNT_ADDED");
+                            return Mono.just(mapToResponse(updatedCustomer, "Account added successfully"));
+                        })
+        );
     }
 
     @Override
@@ -323,4 +339,7 @@ public class CustomerServiceImpl implements CustomerService {
                 .message(message)
                 .build();
     }
+
+
+
 }

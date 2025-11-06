@@ -1,23 +1,18 @@
-package com.account.service.model;
+package com.account.service.dto;
 
+import com.account.service.model.Account;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
-@Document(collection = "accountdb")
 @Data
-@Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Account {
+public class AccountRequest {
 
-    @Id
     private String id;
     private String tenantId;
     private String customerId;
@@ -34,9 +29,8 @@ public class Account {
 
 
     public enum AccountStatus {
-    ACTIVE,
-    INACTIVE,
-    CLOSED
+        ACTIVE,
+        INACTIVE,
+        CLOSED
     }
 }
-

@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 
 @RestController
-@RequestMapping("/api/customers")
+@RequestMapping("/api/v1")
 public class CustomerController {
 
     private final CustomerService customerService;
@@ -29,7 +29,7 @@ public class CustomerController {
         this.messagingTemplate = messagingTemplate;
     }
 
-    @PostMapping("/register")
+    @PostMapping("/register/customer")
     public Mono<ResponseEntity<CustomerResponse>> registerCustomer(
             @RequestBody @Valid CustomerRequest request) {
 
@@ -55,14 +55,14 @@ public class CustomerController {
                 );
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/customer/{id}")
     public Mono<ResponseEntity<CustomerResponse>> getCustomer(@PathVariable String id) {
         return customerService.getCustomerById(id)
                 .map(ResponseEntity::ok)
                 .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 
-    @GetMapping
+    @GetMapping("/customers")
     public Flux<CustomerResponse> getAllCustomers(
             @RequestParam(required = false) String tenantId) {
         if (tenantId != null) {
