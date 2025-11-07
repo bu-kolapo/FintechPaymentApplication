@@ -5,7 +5,7 @@ import com.customer.service.dto.CustomerResponse;
 import com.customer.service.exception.CustomerCreationException;
 import com.customer.service.exception.CustomerNotFoundException;
 import com.customer.service.model.Customer;
-import com.customer.service.model.CustomerEvent;
+import com.customer.service.event.CustomerEvent;
 import com.customer.service.repository.CustomerRepository;
 import com.customer.service.services.CustomerServiceImpl;
 import org.junit.jupiter.api.BeforeEach;

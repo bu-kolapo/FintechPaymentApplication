@@ -3,20 +3,16 @@ package com.account.service.controller;
 import com.account.service.dto.AccountNotification;
 import com.account.service.dto.AccountRequest;
 import com.account.service.exception.AccountCreationException;
-import com.account.service.model.Account;
-import com.account.service.model.AccountResponse;
+import com.account.service.dto.AccountResponse;
 import com.account.service.services.AccountService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 
 @RestController
@@ -55,6 +51,16 @@ public class AccountController {
                                 .body(new AccountResponse(null, e.getMessage()))
                         )
                 );
+    }
+
+
+    @GetMapping("/accounts")
+    public Flux<AccountResponse> getAllAccounts(
+            @RequestParam(required = false) String tenantId) {
+        if (tenantId != null) {
+            return accountService.getAllAccounts();
+        }
+        return accountService.getAllAccounts();
     }
 
 }

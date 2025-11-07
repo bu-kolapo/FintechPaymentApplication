@@ -13,7 +13,7 @@ import java.time.Instant;
 @NoArgsConstructor
 public class AccountRequest {
 
-    private String id;
+    private String accountId;
     private String tenantId;
     private String customerId;
 

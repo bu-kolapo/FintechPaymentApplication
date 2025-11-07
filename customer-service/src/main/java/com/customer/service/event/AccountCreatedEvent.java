@@ -1,4 +1,4 @@
-package com.account.service.model;
+package com.customer.service.event;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -11,6 +11,7 @@ import java.io.Serializable;
 @NoArgsConstructor
 public class AccountCreatedEvent implements Serializable {
     private String id;
+    private String accountId;
     private String customerId;
     private String tenantId;
 

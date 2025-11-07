@@ -9,7 +9,7 @@ import com.customer.service.exception.CustomerDeletionException;
 import com.customer.service.exception.CustomerNotFoundException;
 import com.customer.service.exception.CustomerUpdateException;
 import com.customer.service.model.Customer;
-import com.customer.service.model.CustomerEvent;
+import com.customer.service.event.CustomerEvent;
 import com.customer.service.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;

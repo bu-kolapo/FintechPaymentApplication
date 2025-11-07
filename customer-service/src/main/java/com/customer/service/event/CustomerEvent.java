@@ -1,4 +1,4 @@
-package com.customer.service.model;
+package com.customer.service.event;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

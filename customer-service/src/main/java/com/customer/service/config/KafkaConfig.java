@@ -1,5 +1,5 @@
 package com.customer.service.config;
-import com.customer.service.model.CustomerEvent;
+import com.customer.service.event.CustomerEvent;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;

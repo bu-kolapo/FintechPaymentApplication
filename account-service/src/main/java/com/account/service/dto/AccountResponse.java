@@ -1,6 +1,7 @@
-package com.account.service.model;
+package com.account.service.dto;
 
 import com.account.service.dto.AccountRequest;
+import com.account.service.model.Account;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
