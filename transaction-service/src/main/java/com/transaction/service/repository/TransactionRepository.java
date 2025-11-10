@@ -8,6 +8,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 @Repository
 public interface TransactionRepository extends ReactiveMongoRepository<Transaction,String> {
+    Mono<Transaction> findByIdempotencyKey(String key);
     Mono<Transaction> findByTenantIdAndId(String tenantId, String id);
 
     Flux<Transaction> findByTenantIdAndPaymentId(String tenantId, String paymentId);

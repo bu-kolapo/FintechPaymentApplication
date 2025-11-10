@@ -1,6 +1,7 @@
 package com.account.service.services;
 
 import com.account.service.config.RabbitMQConfig;
+import com.account.service.dto.AccountDTO;
 import com.account.service.dto.AccountRequest;
 import com.account.service.event.AccountCreatedEvent;
 import com.account.service.exception.AccountCreationException;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import javax.security.auth.login.AccountNotFoundException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -73,6 +75,24 @@ public class AccountServiceImpl implements AccountService{
                         "Failed to create account: " + e.getMessage(), e
                 ));
     }
+
+    @Override
+    public Mono<AccountResponse>  getAccountById(String id) {
+        return accountRepository.findById(id)
+                .map(accountRequest -> AccountResponse.builder()
+                        .tenantId(accountRequest.getTenantId())         // comes from request or token
+                        .customerId(accountRequest.getCustomerId())     // from the Customer
+                        .accountNumber(generateAccountNumber())         // generate custom number
+                        .currency(accountRequest.getCurrency())
+                        .balance(accountRequest.getBalance() != null ? accountRequest.getBalance() : BigDecimal.ZERO)
+                        .status(Account.AccountStatus.ACTIVE)
+                        .createdAt(Instant.now())
+                        .updatedAt(Instant.now())
+                        .build()
+                )
+                .switchIfEmpty(Mono.error(new AccountNotFoundException("Customer not found with id: " + id)));
+    }
+
 
 
     public String generateAccountNumber() {
@@ -148,7 +168,28 @@ public class AccountServiceImpl implements AccountService{
                 .map(account -> mapToResponse(account));
     }
 
+    public Mono<AccountDTO> updateBalance(String accountId, BigDecimal newBalance) {
+        return accountRepository.findById(accountId)
+                .flatMap(account -> {
+                    account.setBalance(newBalance);
+                    return accountRepository.save(account);
+                })
+                .map(this::toDTO); // convert entity to DTO
+    }
 
+    private AccountDTO toDTO(Account account) {
+        return AccountDTO.builder()
+                .id(account.getId())
+                .tenantId(account.getTenantId())
+                .customerId(account.getCustomerId())
+                .accountNumber(account.getAccountNumber())
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus())
+                .createdAt(account.getCreatedAt())
+                .updatedAt(account.getUpdatedAt())
+                .build();
+    }
 
 }
 

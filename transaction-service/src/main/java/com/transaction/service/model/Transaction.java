@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -14,7 +16,10 @@ import java.time.Instant;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "transactions")
+@Document(collection = "transactiondb")
+@CompoundIndexes({
+        @CompoundIndex(name = "unique_idempotency_key", def = "{'idempotencyKey': 1}", unique = true)
+})
 public class Transaction {
 
     @Id
@@ -22,6 +27,7 @@ public class Transaction {
     private String tenantId;
     private String paymentId;
     private String accountId;
+    private String idempotencyKey;
 
     private TransactionType type;
     private BigDecimal amount;
@@ -39,6 +45,7 @@ public class Transaction {
     }
 
     public enum TransactionStatus {
+        SUCCESS,
         PENDING,
         CONFIRMED,
         FAILED

@@ -17,6 +17,10 @@ public class RabbitMQConfig {
         public static final String QUEUE_NAME = "account-created-queue";
         public static final String ROUTING_KEY = "account.created";
 
+    public static final String TRANSACTION_EXCHANGE = "transaction-exchange";
+    public static final String TRANSACTION_ROUTING_KEY = "transaction.initiated";
+    public static final String TRANSACTION_QUEUE = "transaction-initiated-queue";
+
         @Bean
         public DirectExchange accountExchange() {
             return new DirectExchange(EXCHANGE_NAME);
@@ -33,6 +37,17 @@ public class RabbitMQConfig {
                     .to(accountExchange)
                     .with(ROUTING_KEY);
         }
+
+    @Bean
+    public DirectExchange transactionExchange() { return new DirectExchange(TRANSACTION_EXCHANGE); }
+
+    @Bean
+    public Queue transactionQueue() { return new Queue(TRANSACTION_QUEUE, true); }
+
+    @Bean
+    public Binding transactionBinding(Queue transactionQueue, DirectExchange transactionExchange) {
+        return BindingBuilder.bind(transactionQueue).to(transactionExchange).with(TRANSACTION_ROUTING_KEY);
+    }
 
     @Bean
     public MessageConverter jsonMessageConverter() {

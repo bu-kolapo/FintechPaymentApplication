@@ -1,5 +1,6 @@
 package com.account.service.controller;
 
+import com.account.service.dto.AccountDTO;
 import com.account.service.dto.AccountNotification;
 import com.account.service.dto.AccountRequest;
 import com.account.service.exception.AccountCreationException;
@@ -13,7 +14,9 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -53,6 +56,13 @@ public class AccountController {
                 );
     }
 
+    @GetMapping("/account/{id}")
+    public Mono<ResponseEntity<AccountResponse>> getAccount(@PathVariable String id) {
+        return accountService.getAccountById(id)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+
 
     @GetMapping("/accounts")
     public Flux<AccountResponse> getAllAccounts(
@@ -61,6 +71,16 @@ public class AccountController {
             return accountService.getAllAccounts();
         }
         return accountService.getAllAccounts();
+    }
+
+    @PatchMapping("/account/{id}/balance")
+    public Mono<ResponseEntity<AccountDTO>> updateBalance(
+            @PathVariable String id,
+            @RequestBody Map<String, BigDecimal> body) {
+        BigDecimal newBalance = body.get("balance");
+        return accountService.updateBalance(id, newBalance)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 
 }
