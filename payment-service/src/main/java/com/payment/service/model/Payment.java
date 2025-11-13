@@ -14,7 +14,7 @@ import java.time.Instant;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "payments")
+@Document(collection = "paymentdb")
 public class Payment {
     @Id
     private String id;
@@ -23,11 +23,13 @@ public class Payment {
     private String accountId;
     private BigDecimal amount;
     private String currency;
-    private PaymentStatus status;
+    private String status;
     private String reference;
+    private String type;
     private String transactionId;
 
-    private Instant createdAt;
+    private Instant createdAt=Instant.now();
+    private Instant processedAt=Instant.now();
     private Instant updatedAt;
 
     // getters and setters

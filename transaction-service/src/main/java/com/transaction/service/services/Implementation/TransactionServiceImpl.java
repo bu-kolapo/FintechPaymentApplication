@@ -5,8 +5,10 @@ import com.transaction.service.config.RabbitMQConfig;
 import com.transaction.service.dto.AccountDTO;
 import com.transaction.service.event.TransactionCompletedEvent;
 import com.transaction.service.model.Transaction;
+import com.transaction.service.publisher.TransactionEventPublisher;
 import com.transaction.service.repository.TransactionRepository;
 import com.transaction.service.services.TransactionService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -18,18 +20,21 @@ import java.time.Instant;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class TransactionServiceImpl implements TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final RabbitTemplate rabbitTemplate;
     private final AccountClient accountClient;
+    private final TransactionEventPublisher eventPublisher;
 
-    public TransactionServiceImpl(TransactionRepository transactionRepository, RabbitTemplate rabbitTemplate,AccountClient accountClient) {
-        this.transactionRepository = transactionRepository;
-        this.rabbitTemplate = rabbitTemplate;
-        this.accountClient=accountClient;
-    }
+//    public TransactionServiceImpl(TransactionRepository transactionRepository, RabbitTemplate rabbitTemplate,AccountClient accountClient,TransactionEventPublisher eventPublisher) {
+//        this.transactionRepository = transactionRepository;
+//        this.rabbitTemplate = rabbitTemplate;
+//        this.accountClient=accountClient;
+//        this.eventPublisher=eventPublisher;
+//    }
     @Override
     public Mono<Transaction> processTransaction(Transaction transaction) {
         log.info("🔵 INCOMING transaction - accountId: '{}', idempotencyKey: '{}'",
@@ -60,32 +65,9 @@ public class TransactionServiceImpl implements TransactionService {
                                     // ✅ Call the client method here
                                     return accountClient.updateAccountBalance(transaction.getAccountId(), account.getBalance())
                                             .then(transactionRepository.save(transaction))
-                                            .doOnSuccess(this::publishTransactionEvent);
+                                            .doOnSuccess(eventPublisher::publishTransactionCompleted);
                                 })
                 );
-    }
-    private void publishTransactionEvent(Transaction transaction) {
-        try {
-            TransactionCompletedEvent event = new TransactionCompletedEvent(
-                    transaction.getId(),
-                    transaction.getAccountId(),
-                    transaction.getAmount(),
-                    transaction.getType().name(),
-                    transaction.getStatus().name(),
-                    transaction.getTenantId(),
-                    System.currentTimeMillis()
-            );
-
-            rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.EXCHANGE_NAME,
-                    RabbitMQConfig.ROUTING_KEY,
-                    event
-            );
-
-            System.out.println("📢 Published TRANSACTION_COMPLETED event: " + event.getTransactionId());
-        } catch (Exception e) {
-            System.err.println("❌ Error publishing event: " + e.getMessage());
-        }
     }
 
 

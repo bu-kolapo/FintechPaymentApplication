@@ -25,7 +25,6 @@ public class Transaction {
     @Id
     private String id;
     private String tenantId;
-    private String paymentId;
     private String accountId;
     private String idempotencyKey;
 

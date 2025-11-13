@@ -10,6 +10,9 @@ import reactor.core.publisher.Mono;
 @Repository
 public interface PaymentRepository extends ReactiveMongoRepository<Payment,String> {
 
+        Mono<Payment> findByTransactionId(String transactionId);
+
+
         Mono<Payment> findByTenantIdAndId(String tenantId, String id);
 
         Flux<Payment> findByTenantIdAndAccountId(String tenantId, String accountId);
