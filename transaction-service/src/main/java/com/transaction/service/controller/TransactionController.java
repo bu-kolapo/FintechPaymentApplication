@@ -32,7 +32,12 @@ public class TransactionController {
     }
 
     // ✅ Get a transaction by ID
-    @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping(value = "/transaction/account/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Flux<Transaction> getTransactionByAccountId(@PathVariable String id) {
+        return transactionService.getTransactionsByAccountId(id);
+    }
+
+    @GetMapping(value = "/transaction/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Transaction> getTransactionById(@PathVariable String id) {
         return transactionService.getTransactionById(id);
     }

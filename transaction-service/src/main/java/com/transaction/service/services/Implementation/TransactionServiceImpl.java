@@ -81,10 +81,15 @@ public class TransactionServiceImpl implements TransactionService {
     /**
      * ✅ Retrieve a single transaction by ID
      */
-    public Mono<Transaction> getTransactionById(String id) {
-        return transactionRepository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("❌ Transaction not found with id: " + id)))
-                .doOnSuccess(tx -> System.out.println("📘 Fetched transaction with id: " + id));
+    public Flux<Transaction> getTransactionsByAccountId(String accountId) {
+        return transactionRepository.findByAccountId(accountId)
+                .switchIfEmpty(Mono.error(new RuntimeException("❌ No transactions found for accountId: " + accountId)))
+                .doOnComplete(() -> System.out.println("📘 Fetched transactions for accountId: " + accountId));
+    }
+
+    public Mono<Transaction> getTransactionById(String id)
+    { return transactionRepository.findById(id) .switchIfEmpty(Mono.error(new RuntimeException("❌ Transaction not found with id: " + id)))
+            .doOnSuccess(tx -> System.out.println("📘 Fetched transaction with id: " + id));
     }
 }
 
