@@ -19,6 +19,7 @@ public class CustomerRequest {
     @Id
     private String id;
     private String tenantId;
+    private String idempotencyKey;
 
     private String firstName;
     private String lastName;

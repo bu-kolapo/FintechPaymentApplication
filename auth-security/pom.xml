@@ -31,6 +31,12 @@
                 <artifactId>spring-boot-starter-data-mongodb-reactive</artifactId>
             </dependency>
 
+            <dependency>
+                <groupId>com.payment</groupId>   <!-- or whatever groupId your common-lib has -->
+                <artifactId>common-lib</artifactId>
+                <version>0.0.1-SNAPSHOT</version>
+            </dependency>
+
             <!-- ✅ Security -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>

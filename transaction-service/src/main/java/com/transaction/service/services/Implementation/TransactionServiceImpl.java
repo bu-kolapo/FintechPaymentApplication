@@ -1,5 +1,6 @@
 package com.transaction.service.services.Implementation;
 
+import com.commonlib.service.IdempotencyService;
 import com.transaction.service.client.AccountClient;
 import com.transaction.service.config.RabbitMQConfig;
 import com.transaction.service.dto.AccountDTO;
@@ -8,6 +9,8 @@ import com.transaction.service.model.Transaction;
 import com.transaction.service.publisher.TransactionEventPublisher;
 import com.transaction.service.repository.TransactionRepository;
 import com.transaction.service.services.TransactionService;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -16,6 +19,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 
@@ -29,46 +33,63 @@ public class TransactionServiceImpl implements TransactionService {
     private final AccountClient accountClient;
     private final TransactionEventPublisher eventPublisher;
 
+    private final IdempotencyService idempotencyService;
+
+
+
+
 //    public TransactionServiceImpl(TransactionRepository transactionRepository, RabbitTemplate rabbitTemplate,AccountClient accountClient,TransactionEventPublisher eventPublisher) {
 //        this.transactionRepository = transactionRepository;
 //        this.rabbitTemplate = rabbitTemplate;
 //        this.accountClient=accountClient;
 //        this.eventPublisher=eventPublisher;
 //    }
-    @Override
-    public Mono<Transaction> processTransaction(Transaction transaction) {
-        log.info("🔵 INCOMING transaction - accountId: '{}', idempotencyKey: '{}'",
-                transaction.getAccountId(), transaction.getIdempotencyKey());
-        return transactionRepository.findByIdempotencyKey(transaction.getIdempotencyKey())
-                .switchIfEmpty(
-                        accountClient.getAccountById(transaction.getAccountId())
-                                .flatMap(account -> {
-                                    BigDecimal currentBalance = account.getBalance();
-                                    BigDecimal txnAmount = transaction.getAmount();
+@Override
+@CircuitBreaker(name = "transactionServiceCB", fallbackMethod = "transactionFallback")
+@RateLimiter(name = "transactionServiceRL")
+public Mono<Transaction> processTransaction(Transaction transaction) {
+    String key = transaction.getIdempotencyKey();
 
-                                    // Handle DEBIT / CREDIT
-                                    if (transaction.getType() == Transaction.TransactionType.DEBIT) {
-                                        if (currentBalance.compareTo(txnAmount) < 0) {
-                                            transaction.setStatus(Transaction.TransactionStatus.FAILED);
-                                            transaction.setDescription("Insufficient funds");
-                                            transaction.setProcessedAt(Instant.now());
-                                            return Mono.just(transaction);
-                                        }
-                                        account.setBalance(currentBalance.subtract(txnAmount));
-                                    } else if (transaction.getType() == Transaction.TransactionType.CREDIT) {
-                                        account.setBalance(currentBalance.add(txnAmount));
-                                    }
+    // 1️⃣ Check Redis first
+    return idempotencyService.exists(key)
+            .flatMap(exists -> {
+                if (exists) {
+                    // 2️⃣ Return cached response
+                    return idempotencyService.getResponse(key, Transaction.class);
+                }
 
-                                    transaction.setStatus(Transaction.TransactionStatus.SUCCESS);
+                // 3️⃣ Process transaction normally
+                return accountClient.getAccountById(transaction.getAccountId())
+                        .flatMap(account -> {
+                            BigDecimal currentBalance = account.getBalance();
+                            BigDecimal txnAmount = transaction.getAmount();
+
+                            if (transaction.getType() == Transaction.TransactionType.DEBIT) {
+                                if (currentBalance.compareTo(txnAmount) < 0) {
+                                    transaction.setStatus(Transaction.TransactionStatus.FAILED);
+                                    transaction.setDescription("Insufficient funds");
                                     transaction.setProcessedAt(Instant.now());
+                                    return Mono.just(transaction);
+                                }
+                                account.setBalance(currentBalance.subtract(txnAmount));
+                            } else if (transaction.getType() == Transaction.TransactionType.CREDIT) {
+                                account.setBalance(currentBalance.add(txnAmount));
+                            }
 
-                                    // ✅ Call the client method here
-                                    return accountClient.updateAccountBalance(transaction.getAccountId(), account.getBalance())
-                                            .then(transactionRepository.save(transaction))
-                                            .doOnSuccess(eventPublisher::publishTransactionCompleted);
-                                })
-                );
-    }
+                            transaction.setStatus(Transaction.TransactionStatus.SUCCESS);
+                            transaction.setProcessedAt(Instant.now());
+
+                            // 4️⃣ Update account and save transaction
+                            return accountClient.updateAccountBalance(transaction.getAccountId(), account.getBalance())
+                                    .then(transactionRepository.save(transaction))
+                                    // 5️⃣ Store transaction in Redis for idempotency
+                                    .flatMap(savedTxn -> idempotencyService.storeResponse(key, savedTxn)
+                                            .thenReturn(savedTxn))
+                                    // 6️⃣ Publish event
+                                    .doOnSuccess(eventPublisher::publishTransactionCompleted);
+                        });
+            });
+}
 
 
 

@@ -8,6 +8,9 @@ import com.account.service.exception.AccountCreationException;
 import com.account.service.model.Account;
 import com.account.service.dto.AccountResponse;
 import com.account.service.repository.AccountRepository;
+import com.commonlib.service.IdempotencyService;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -36,45 +39,64 @@ public class AccountServiceImpl implements AccountService{
     @Value("${messaging.enabled:false}")
     private boolean messagingEnabled;
 
-    public AccountServiceImpl(AccountRepository accountRepository, RabbitTemplate rabbitTemplate) {
+    private final IdempotencyService idempotencyService;
+
+    public AccountServiceImpl(AccountRepository accountRepository, RabbitTemplate rabbitTemplate,IdempotencyService idempotencyService) {
         this.accountRepository = accountRepository;
         this.rabbitTemplate =rabbitTemplate;
+        this.idempotencyService=idempotencyService;
     }
 
     @Override
+    @CircuitBreaker(name = "accountServiceCB", fallbackMethod = "accountFallback")
+    @RateLimiter(name = "accountServiceRL")
     public Mono<AccountResponse> createAccount(AccountRequest accountRequest) {
 
-        // ✅ Build the account entity (no need to generate tenantId here)
-        Account account = Account.builder()
-                .tenantId(accountRequest.getTenantId())         // comes from request or token
-                .customerId(accountRequest.getCustomerId())     // from the Customer
-                .accountNumber(generateAccountNumber())         // generate custom number
-                .currency(accountRequest.getCurrency())
-                .balance(accountRequest.getBalance() != null ? accountRequest.getBalance() : BigDecimal.ZERO)
-                .status(Account.AccountStatus.ACTIVE)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
+        String key = accountRequest.getIdempotencyKey();
+        if (key == null || key.isBlank()) {
+            return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
+        }
 
-        // ✅ Save to DB reactively, then publish event
-        return accountRepository.save(account)
-                .flatMap(savedAccount -> {
-                    // ✅ Create and populate the event after save
-                    AccountCreatedEvent event = new AccountCreatedEvent();
-                    event.setAccountId(savedAccount.getId());
-                    event.setCustomerId(savedAccount.getCustomerId());
-                    event.setTenantId(savedAccount.getTenantId());
+        // 1️⃣ Check Redis
+        return idempotencyService.exists(key)
+                .flatMap(exists -> {
+                    if (exists) {
+                        return idempotencyService.getResponse(key, AccountResponse.class);
+                    } else {
+                        // ✅ Build the account entity
+                        Account account = Account.builder()
+                                .tenantId(accountRequest.getTenantId())
+                                .customerId(accountRequest.getCustomerId())
+                                .accountNumber(generateAccountNumber())
+                                .currency(accountRequest.getCurrency())
+                                .balance(accountRequest.getBalance() != null ? accountRequest.getBalance() : BigDecimal.ZERO)
+                                .status(Account.AccountStatus.ACTIVE)
+                                .createdAt(Instant.now())
+                                .updatedAt(Instant.now())
+                                .build();
 
-                    // ✅ Publish the event
-                    publishEvents(event, "ACCOUNT_CREATED");
+                        // ✅ Save to DB reactively, then publish event
+                        return accountRepository.save(account)
+                                .flatMap(savedAccount -> {
+                                    // ✅ Create and populate the event after save
+                                    AccountCreatedEvent event = new AccountCreatedEvent();
+                                    event.setAccountId(savedAccount.getId());
+                                    event.setCustomerId(savedAccount.getCustomerId());
+                                    event.setTenantId(savedAccount.getTenantId());
 
-                    // ✅ Return the response
-                    return Mono.just(mapToResponse(savedAccount));
-                })
-                .onErrorMap(e -> new AccountCreationException(
-                        "Failed to create account: " + e.getMessage(), e
-                ));
+                                    // ✅ Publish the event
+                                    publishEvents(event, "ACCOUNT_CREATED");
+
+                                    // ✅ Return the response
+                                    return Mono.just(mapToResponse(savedAccount));
+                                })
+                                .onErrorMap(e -> new AccountCreationException(
+                                        "Failed to create account: " + e.getMessage(), e
+                                ));
+                    }
+                });
     }
+
 
     @Override
     public Mono<AccountResponse>  getAccountById(String id) {

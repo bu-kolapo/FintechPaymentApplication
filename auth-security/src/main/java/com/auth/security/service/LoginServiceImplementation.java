@@ -2,7 +2,7 @@ package com.auth.security.service;
 
 import com.auth.security.model.UserAuthentication;
 import com.auth.security.repository.UserAuthenticationRepository;
-import com.auth.security.util.JwtUtil;
+import com.commonlib.util.JwtUtil;
 import lombok.SneakyThrows;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -23,13 +23,15 @@ import java.util.ArrayList;
 public class LoginServiceImplementation implements ReactiveUserDetailsService {
 
     private  final UserAuthenticationRepository userAuthenticationRepository;
-    private  final JwtUtil jwtUtil;
+
     private final PasswordEncoder passwordEncoder;
 
-    public LoginServiceImplementation(UserAuthenticationRepository userAuthenticationRepository,JwtUtil jwtUtil,PasswordEncoder passwordEncoder) {
+    private final JwtUtil jwtUtil;
+
+    public LoginServiceImplementation(UserAuthenticationRepository userAuthenticationRepository,PasswordEncoder passwordEncoder,JwtUtil jwtUtil) {
         this.userAuthenticationRepository = userAuthenticationRepository;
-        this.jwtUtil=jwtUtil;
         this.passwordEncoder=passwordEncoder;
+        this.jwtUtil=jwtUtil;
         System.out.println("✅ LoginServiceImplementation bean created successfully!");
     }
 

@@ -1,15 +1,17 @@
-package com.auth.security.security;
+package com.commonlib.security;
 
-import com.auth.security.service.filter.JwtRequestFilter;
+
+import com.commonlib.filter.JwtRequestFilter;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
@@ -19,25 +21,24 @@ import java.util.Arrays;
 
 @Configuration
 @RequiredArgsConstructor
-public class SecurityConfiguration {
+@EnableWebFluxSecurity
+public class GlobalSecurityConfiguration {
 
-
-
-    @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http,JwtRequestFilter jwtRequestFilter) {
+    private final JwtRequestFilter jwtRequestFilter;
+   @Bean
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
-//                        .pathMatchers("/api/v1/login").permitAll()
-                        .pathMatchers("/api/v1/register/customer").authenticated()
-                        .anyExchange().authenticated())
-                .addFilterBefore(jwtRequestFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+                        .pathMatchers("/api/v1/login", "/api/v1/register/customer").permitAll()
+                        .anyExchange().authenticated()
+                )
+                .addFilterAt(jwtRequestFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-
         return new BCryptPasswordEncoder();
     }
 
@@ -52,7 +53,4 @@ public class SecurityConfiguration {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
-
-
 }

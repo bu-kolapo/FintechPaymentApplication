@@ -2,12 +2,11 @@ package com.auth.security.controller;
 
 import com.auth.security.model.UserAuthentication;
 import com.auth.security.service.LoginServiceImplementation;
-import com.auth.security.util.JwtUtil;
+import com.commonlib.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.core.userdetails.ReactiveUserDetailsService;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 

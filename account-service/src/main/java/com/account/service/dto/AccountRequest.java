@@ -16,6 +16,7 @@ public class AccountRequest {
     private String accountId;
     private String tenantId;
     private String customerId;
+    private String idempotencyKey;
 
     private String accountNumber;
     private String currency;

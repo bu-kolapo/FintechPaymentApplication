@@ -26,6 +26,7 @@ public class Payment {
     private String status;
     private String reference;
     private String type;
+    private String idempotencyKey;
     private String transactionId;
 
     private Instant createdAt=Instant.now();

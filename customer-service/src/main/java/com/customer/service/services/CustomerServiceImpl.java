@@ -1,6 +1,7 @@
 package com.customer.service.services;
 
 
+import com.commonlib.service.IdempotencyService;
 import com.customer.service.dto.CustomerNotification;
 import com.customer.service.dto.CustomerRequest;
 import com.customer.service.dto.CustomerResponse;
@@ -11,6 +12,8 @@ import com.customer.service.exception.CustomerUpdateException;
 import com.customer.service.model.Customer;
 import com.customer.service.event.CustomerEvent;
 import com.customer.service.repository.CustomerRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,45 +50,62 @@ public class CustomerServiceImpl implements CustomerService {
     @Value("${messaging.enabled:false}")
     private boolean messagingEnabled;
 
+    private IdempotencyService idempotencyService;
+
     private final WebClient accountClient;
 
-    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,WebClient.Builder webClientBuilder) {
+    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,WebClient.Builder webClientBuilder,IdempotencyService idempotencyService) {
         this.customerRepository = customerRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.rabbitTemplate = rabbitTemplate;
+        this.idempotencyService=idempotencyService;
         this.messagingTemplate=messagingTemplate;
         this.accountClient= webClientBuilder.baseUrl("http://localhost:8085/api/v1/account").build();
     }
 
     @Override
+    @RateLimiter(name = "customerServiceRL")
+    @CircuitBreaker(name = "customerServiceCB", fallbackMethod = "customerFallback")
     public Mono<CustomerResponse> registerCustomer(CustomerRequest customerRequest) {
-        // 1. Generate ID and build entity
-        String tenantId = UUID.randomUUID().toString();
-        System.out.println("TENANT ID" +tenantId);
 
-        Customer customer = Customer.builder()
-//                .id(customerId)
-                .tenantId(tenantId)
-                .firstName(customerRequest.getFirstName())
-                .lastName(customerRequest.getLastName())
-                .email(customerRequest.getEmail())
-                .phoneNumber(customerRequest.getPhoneNumber())
-                .dateOfBirth(customerRequest.getDateOfBirth())
-                .status(Customer.CustomerStatus.ACTIVE)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .accountIds(new ArrayList<>())
-                .build();
+        String key = customerRequest.getIdempotencyKey();
+        if (key == null || key.isBlank()) {
+            return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
+        }
 
-        // 2. Save to DB and handle reactively
-        return customerRepository.save(customer)
-                .flatMap(savedCustomer -> {
-                    publishEvents(savedCustomer, "REGISTERED");
-                    return Mono.just(mapToResponse(savedCustomer, "Customer registered successfully"));
-                })
-                .onErrorMap(e -> new CustomerCreationException(
-                        "Failed to register customer: " + e.getMessage(), e));
+        return idempotencyService.exists(key)
+                .flatMap(exists -> {
+                    if (exists) {
+                        return idempotencyService.getResponse(key, CustomerResponse.class);
+                    } else {
+                        // 1. Generate ID and build entity
+                        String tenantId = UUID.randomUUID().toString();
+                        Customer customer = Customer.builder()
+                                .tenantId(tenantId)
+                                .firstName(customerRequest.getFirstName())
+                                .lastName(customerRequest.getLastName())
+                                .email(customerRequest.getEmail())
+                                .phoneNumber(customerRequest.getPhoneNumber())
+                                .dateOfBirth(customerRequest.getDateOfBirth())
+                                .status(Customer.CustomerStatus.ACTIVE)
+                                .createdAt(Instant.now())
+                                .updatedAt(Instant.now())
+                                .accountIds(new ArrayList<>())
+                                .build();
+
+                        // 2. Save to DB and handle reactively
+                        return customerRepository.save(customer)
+                                .flatMap(savedCustomer -> {
+                                    publishEvents(savedCustomer, "REGISTERED");
+                                    return Mono.just(mapToResponse(savedCustomer, "Customer registered successfully"));
+                                })
+                                .onErrorMap(e -> new CustomerCreationException(
+                                        "Failed to register customer: " + e.getMessage(), e
+                                ));
+                    }
+                });
     }
+
 
     // Helper method to publish events with error handling
     private void publishEvents(Customer customer, String eventType) {
@@ -141,6 +161,7 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
+    @CircuitBreaker(name = "customerServiceCB", fallbackMethod = "customerFallback")
     public Mono<CustomerResponse> getCustomerById(String id) {
         return customerRepository.findById(id)
                 .map(customer -> CustomerResponse.builder()
@@ -182,6 +203,10 @@ public class CustomerServiceImpl implements CustomerService {
                 })
                 .onErrorMap(e -> new CustomerUpdateException(
                         "Failed to update customer: " + e.getMessage(), e));
+    }
+
+    private Mono<CustomerResponse> customerFallback(String customerId, Throwable ex) {
+        return Mono.error(new RuntimeException("❌ Customer Service unavailable. Try again later.", ex));
     }
 
     @Override
