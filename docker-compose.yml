@@ -1,76 +1,122 @@
 version: '3.8'
 
 services:
-  # Zookeeper - Required for Kafka
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+  # Redis for caching / sessions
+  redis:
+    image: redis:7.0-alpine
+    container_name: redis
     ports:
-      - "2181:2181"
+      - "6379:6379"
     networks:
-      - customer-network
-
-  # Kafka
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "9094:9094"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:9094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-    networks:
-      - customer-network
+      - microservices-network
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 5
 
-  # RabbitMQ
+  # RabbitMQ for messaging
   rabbitmq:
     image: rabbitmq:3.12-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"   # AMQP port
+      - "5672:5672"   # AMQP
       - "15672:15672" # Management UI
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     networks:
-      - customer-network
+      - microservices-network
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 5
 
-  # Kafka UI (Optional - for monitoring)
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    depends_on:
-      - kafka
+  # Security / Auth service
+  auth-service:
+    image: auth-service:latest
+    build:
+      context: ./auth-service
     ports:
-      - "8090:8080"
+      - "8080:8080"
     environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9094
-      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      SPRING_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - redis
+      - rabbitmq
     networks:
-      - customer-network
+      - microservices-network
+
+  # Customer service
+  customer-service:
+    image: customer-service:latest
+    build:
+      context: ./customer-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - auth-service
+      - redis
+      - rabbitmq
+    networks:
+      - microservices-network
+
+  # Account service
+  account-service:
+    image: account-service:latest
+    build:
+      context: ./account-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - customer-service
+      - redis
+      - rabbitmq
+    networks:
+      - microservices-network
+
+  # Transaction service
+  transaction-service:
+    image: transaction-service:latest
+    build:
+      context: ./transaction-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - account-service
+      - redis
+      - rabbitmq
+    networks:
+      - microservices-network
+
+  # Payment service
+  payment-service:
+    image: payment-service:latest
+    build:
+      context: ./payment-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - transaction-service
+      - redis
+      - rabbitmq
+    networks:
+      - microservices-network
 
 networks:
-  customer-network:
+  microservices-network:
     driver: bridge
