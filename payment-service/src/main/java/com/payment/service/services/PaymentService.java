@@ -1,5 +1,6 @@
 package com.payment.service.services;
 
+import com.payment.service.dto.PaymentRequest;
 import com.payment.service.model.Payment;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -7,5 +8,8 @@ import reactor.core.publisher.Mono;
 public interface PaymentService {
     Flux<Payment> getAllPayments();
     Mono<Payment> getPaymentById(String id);
+    Mono<Payment> processPayment(PaymentRequest paymentRequest);
+    Mono<Payment> paymentFallback(PaymentRequest request, Throwable ex);
     Mono<Payment> savePayment(Payment payment);
+
 }

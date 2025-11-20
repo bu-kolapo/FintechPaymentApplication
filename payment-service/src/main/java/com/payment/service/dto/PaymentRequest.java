@@ -1,11 +1,10 @@
-package com.payment.service.model;
+package com.payment.service.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -14,9 +13,8 @@ import java.time.Instant;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "paymentdb")
-public class Payment {
-    @Id
+public class PaymentRequest {
+
     private String id;
     private String tenantId;
     private String customerId;
@@ -25,13 +23,11 @@ public class Payment {
     private String currency;
     private String status;
     private String reference;
+    private String sourceAccount;
+    private String destinationAccount;
     private String type;
     private String idempotencyKey;
     private String transactionId;
-    private String sourceAccount;
-    private String destinationAccount;
-    private String debitTransactionId;
-    private String creditTransactionId;
 
     private Instant createdAt=Instant.now();
     private Instant processedAt=Instant.now();
@@ -40,9 +36,9 @@ public class Payment {
     // getters and setters
 
 
-   public enum PaymentStatus {
-    PENDING,
-    COMPLETED,
-    FAILED
-   }
+    public enum PaymentStatus {
+        PENDING,
+        COMPLETED,
+        FAILED
+    }
 }

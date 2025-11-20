@@ -44,6 +44,7 @@ public class TransactionServiceImpl implements TransactionService {
 //        this.accountClient=accountClient;
 //        this.eventPublisher=eventPublisher;
 //    }
+    //single-account ledger operation
 @Override
 @CircuitBreaker(name = "transactionServiceCB", fallbackMethod = "transactionFallback")
 @RateLimiter(name = "transactionServiceRL")

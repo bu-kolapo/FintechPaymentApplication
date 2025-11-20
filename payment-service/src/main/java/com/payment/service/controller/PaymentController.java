@@ -1,23 +1,32 @@
 package com.payment.service.controller;
 
+import com.payment.service.dto.PaymentRequest;
 import com.payment.service.model.Payment;
 import com.payment.service.services.PaymentService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @RestController
-@RequestMapping("/api/v1/payments")
+@RequestMapping("/api/v1/payment")
 public class PaymentController {
 
     private final PaymentService paymentService;
 
+
+
     public PaymentController(PaymentService paymentService) {
         this.paymentService = paymentService;
     }
+
+    @PostMapping("/process")
+    public Mono<ResponseEntity<Payment>> makePayment(@RequestBody PaymentRequest request) {
+        return paymentService.processPayment(request)
+                .map(payment -> ResponseEntity.ok(payment))
+                .onErrorResume(ex -> Mono.just(ResponseEntity.badRequest().build()));
+    }
+
 
     @GetMapping
     public Flux<Payment> getAllPayments() {
