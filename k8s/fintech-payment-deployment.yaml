@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: customer-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: customer-service-config
+  namespace: customer-service
+data:
+  SPRING_REDIS_HOST: redis
+  SPRING_RABBITMQ_HOST: rabbitmq
+  SPRING_RABBITMQ_USERNAME: guest
+  SPRING_RABBITMQ_PASSWORD: guest1
+  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customerdb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: customer-service
+  namespace: customer-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: customer-service
+  template:
+    metadata:
+      labels:
+        app: customer-service
+    spec:
+      containers:
+        - name: customer-service
+          image: your-dockerhub-username/customer-service:latest
+          ports:
+            - containerPort: 8086
+          env:
+            - name: SPRING_REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: customer-service-config
+                  key: SPRING_REDIS_HOST
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: customer-service-config
+                  key: SPRING_RABBITMQ_HOST
+            - name: SPRING_DATA_MONGODB_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: customer-service-config
+                  key: SPRING_DATA_MONGODB_URI
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: customer-service
+  namespace: customer-service
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 8086
+      targetPort: 8086
+  selector:
+    app: customer-service
