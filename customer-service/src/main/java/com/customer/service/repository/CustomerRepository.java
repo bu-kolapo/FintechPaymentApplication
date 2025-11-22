@@ -22,6 +22,7 @@ public interface CustomerRepository extends ReactiveMongoRepository<Customer,Str
     Flux<Customer> findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(String searchTerm, String searchTerm1, String searchTerm2);
     
     Mono<Customer> findById(Long customerId);
+    Flux<Customer> findAll();
 
     Mono<Boolean> existsByEmail(String email);
 

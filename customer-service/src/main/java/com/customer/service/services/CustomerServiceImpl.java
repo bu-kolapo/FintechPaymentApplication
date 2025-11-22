@@ -52,16 +52,17 @@ public class CustomerServiceImpl implements CustomerService {
 
     private IdempotencyService idempotencyService;
 
-    private final WebClient accountClient;
+//    private final WebClient accountClient;
 
-    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,WebClient.Builder webClientBuilder,IdempotencyService idempotencyService) {
+    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,IdempotencyService idempotencyService) {
         this.customerRepository = customerRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.rabbitTemplate = rabbitTemplate;
         this.idempotencyService=idempotencyService;
         this.messagingTemplate=messagingTemplate;
-        this.accountClient= webClientBuilder.baseUrl("http://localhost:8085/api/v1/account").build();
+//        this.accountClient= webClientBuilder.baseUrl("http://localhost:8085/api/v1/account").build();
     }
+
 
     @Override
     @RateLimiter(name = "customerServiceRL")
@@ -73,38 +74,45 @@ public class CustomerServiceImpl implements CustomerService {
             return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
         }
 
+        // 1. CHECK IF PREVIOUS RESPONSE EXISTS
         return idempotencyService.exists(key)
                 .flatMap(exists -> {
                     if (exists) {
+                        // Return same exact response every time
                         return idempotencyService.getResponse(key, CustomerResponse.class);
-                    } else {
-                        // 1. Generate ID and build entity
-                        String tenantId = UUID.randomUUID().toString();
-                        Customer customer = Customer.builder()
-                                .tenantId(tenantId)
-                                .firstName(customerRequest.getFirstName())
-                                .lastName(customerRequest.getLastName())
-                                .email(customerRequest.getEmail())
-                                .phoneNumber(customerRequest.getPhoneNumber())
-                                .dateOfBirth(customerRequest.getDateOfBirth())
-                                .status(Customer.CustomerStatus.ACTIVE)
-                                .createdAt(Instant.now())
-                                .updatedAt(Instant.now())
-                                .accountIds(new ArrayList<>())
-                                .build();
-
-                        // 2. Save to DB and handle reactively
-                        return customerRepository.save(customer)
-                                .flatMap(savedCustomer -> {
-                                    publishEvents(savedCustomer, "REGISTERED");
-                                    return Mono.just(mapToResponse(savedCustomer, "Customer registered successfully"));
-                                })
-                                .onErrorMap(e -> new CustomerCreationException(
-                                        "Failed to register customer: " + e.getMessage(), e
-                                ));
                     }
+
+                    // 2. CREATE NEW CUSTOMER
+                    String tenantId = UUID.randomUUID().toString();
+                    Customer customer = Customer.builder()
+                            .tenantId(tenantId)
+                            .firstName(customerRequest.getFirstName())
+                            .lastName(customerRequest.getLastName())
+                            .email(customerRequest.getEmail())
+                            .phoneNumber(customerRequest.getPhoneNumber())
+                            .dateOfBirth(customerRequest.getDateOfBirth())
+                            .status(Customer.CustomerStatus.ACTIVE)
+                            .createdAt(Instant.now())
+                            .updatedAt(Instant.now())
+                            .accountIds(new ArrayList<>())
+                            .build();
+
+                    // 3. SAVE TO DATABASE
+                    return customerRepository.save(customer)
+                            .flatMap(savedCustomer -> {
+                                CustomerResponse response =
+                                        mapToResponse(savedCustomer, "Customer registered successfully");
+
+                                // **4. SAVE RESPONSE IN REDIS FOR IDEMPOTENCY**
+                                return idempotencyService.storeResponse(key, response)
+                                        .thenReturn(response);
+                            })
+                            .onErrorMap(e -> new CustomerCreationException(
+                                    "Failed to register customer: " + e.getMessage(), e
+                            ));
                 });
     }
+
 
 
     // Helper method to publish events with error handling
@@ -204,10 +212,20 @@ public class CustomerServiceImpl implements CustomerService {
                 .onErrorMap(e -> new CustomerUpdateException(
                         "Failed to update customer: " + e.getMessage(), e));
     }
+    private Mono<CustomerResponse> customerFallback(CustomerRequest request, Throwable ex) {
+        return Mono.just(
+                CustomerResponse.builder()
+                        .firstName(request.getFirstName())
+                        .lastName(request.getLastName())
+                        .email(request.getEmail())
+                        .phoneNumber(request.getPhoneNumber())
+                        .message("Customer Registration already successful")
+                        .status(Customer.CustomerStatus.FAILED)
+                        .build()
 
-    private Mono<CustomerResponse> customerFallback(String customerId, Throwable ex) {
-        return Mono.error(new RuntimeException("❌ Customer Service unavailable. Try again later.", ex));
+        );
     }
+
 
     @Override
     public Mono<Void> deleteCustomer(String id) {
@@ -281,35 +299,35 @@ public class CustomerServiceImpl implements CustomerService {
         return customerRepository.existsByEmail(email);
     }
 
-    @Override
-    public Mono<CustomerResponse> addAccountToCustomer(String customerId, String accountId) {
-        // Step 1: Fetch account from Account Service to validate it exists
-        Mono<Map> accountMono = accountClient.get()
-                .uri("/{id}", accountId)
-                .retrieve()
-                .bodyToMono(Map.class);
-
-        return accountMono.flatMap(account ->
-                customerRepository.findById(customerId)
-                        .switchIfEmpty(Mono.error(new CustomerNotFoundException("Customer not found with id: " + customerId)))
-                        .flatMap(customer -> {
-                            if (customer.getAccountIds() == null) {
-                                customer.setAccountIds(new ArrayList<>());
-                            }
-                            if (!customer.getAccountIds().contains(accountId)) {
-                                customer.getAccountIds().add(accountId);
-                                customer.setUpdatedAt(Instant.now());
-                                return customerRepository.save(customer);
-                            }
-                            return Mono.just(customer);
-                        })
-                        .flatMap(updatedCustomer -> {
-                            // Optional: publish an event that an account was added
-                            publishEvents(updatedCustomer, "ACCOUNT_ADDED");
-                            return Mono.just(mapToResponse(updatedCustomer, "Account added successfully"));
-                        })
-        );
-    }
+//    @Override
+//    public Mono<CustomerResponse> addAccountToCustomer(String customerId, String accountId) {
+//        // Step 1: Fetch account from Account Service to validate it exists
+//        Mono<Map> accountMono = accountClient.get()
+//                .uri("/{id}", accountId)
+//                .retrieve()
+//                .bodyToMono(Map.class);
+//
+//        return accountMono.flatMap(account ->
+//                customerRepository.findById(customerId)
+//                        .switchIfEmpty(Mono.error(new CustomerNotFoundException("Customer not found with id: " + customerId)))
+//                        .flatMap(customer -> {
+//                            if (customer.getAccountIds() == null) {
+//                                customer.setAccountIds(new ArrayList<>());
+//                            }
+//                            if (!customer.getAccountIds().contains(accountId)) {
+//                                customer.getAccountIds().add(accountId);
+//                                customer.setUpdatedAt(Instant.now());
+//                                return customerRepository.save(customer);
+//                            }
+//                            return Mono.just(customer);
+//                        })
+//                        .flatMap(updatedCustomer -> {
+//                            // Optional: publish an event that an account was added
+//                            publishEvents(updatedCustomer, "ACCOUNT_ADDED");
+//                            return Mono.just(mapToResponse(updatedCustomer, "Account added successfully"));
+//                        })
+//        );
+//    }
 
     @Override
     public Mono<CustomerResponse> removeAccountFromCustomer(Long customerId, String accountId)throws CustomerNotFoundException {

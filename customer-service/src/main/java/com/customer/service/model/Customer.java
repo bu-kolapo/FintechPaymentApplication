@@ -38,6 +38,7 @@ public class Customer {
 
     public enum CustomerStatus {
         ACTIVE,
+        FAILED,
         INACTIVE,
         SUSPENDED
     }

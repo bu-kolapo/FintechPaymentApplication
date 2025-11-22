@@ -20,7 +20,7 @@ public interface CustomerService {
     Flux<CustomerResponse> getCustomersByStatus(Customer.CustomerStatus status);
     Mono<CustomerResponse> getCustomerByEmail(String email);
     Mono<Boolean> existsByEmail(String email);
-    Mono<CustomerResponse> addAccountToCustomer(String customerId, String accountId);
+//    Mono<CustomerResponse> addAccountToCustomer(String customerId, String accountId);
     Mono<CustomerResponse> removeAccountFromCustomer(Long customerId, String accountId) throws CustomerNotFoundException;
     Flux<CustomerResponse> searchCustomers(String searchTerm);
     Mono<Long> countCustomersByTenant(String tenantId);

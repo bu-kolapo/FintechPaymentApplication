@@ -33,6 +33,9 @@ public class CustomerRequest {
 
     private List<String> accountIds; // optional reference to accounts
 
+    public CustomerRequest(String key456, String jane, String doe, String s, String s1, LocalDate of) {
+    }
+
 
     public enum CustomerStatus {
         ACTIVE,
