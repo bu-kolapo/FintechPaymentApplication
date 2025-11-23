@@ -1,0 +1,13 @@
+# Make sure you're in the root directory
+cd C:\Users\user\IdeaProjects\FintechPayment
+  
+  # Verify you're in the right place
+dir
+  
+  # Create GitHub Actions workflow
+mkdir .github\workflows -Force
+New-Item -Path ".github\workflows\ci-cd.yml" -ItemType File -Force
+  
+  # Create Kubernetes deployment
+mkdir k8s -Force
+New-Item -Path "k8s\deployment.yaml" -ItemType File -Force
