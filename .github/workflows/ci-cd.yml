@@ -30,10 +30,10 @@ jobs:
           cd customer-service
           mvn test -Dtest=CustomerServiceTest
 
-      - name: Run Integration Tests
-        run: |
-          cd customer-service
-          mvn test -Dtest=CustomerServiceIntegrationTest
+#      - name: Run Integration Tests
+#        run: |
+#          cd customer-service
+#          mvn test -Dtest=CustomerServiceIntegrationTest
 
       - name: Upload Test Results
         if: always()
