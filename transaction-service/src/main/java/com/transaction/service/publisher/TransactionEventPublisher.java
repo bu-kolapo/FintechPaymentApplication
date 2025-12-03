@@ -1,6 +1,7 @@
 package com.transaction.service.publisher;
 
 import com.transaction.service.config.RabbitMQConfig;
+import com.transaction.service.dto.TransactionResponse;
 import com.transaction.service.event.TransactionCompletedEvent;
 import com.transaction.service.event.TransactionCreatedEvent;
 import com.transaction.service.model.Transaction;
@@ -21,15 +22,15 @@ public class TransactionEventPublisher {
 //        this.rabbitTemplate = rabbitTemplate;
 //    }
 
-    public void publishTransactionCompleted(Transaction transaction) {
+    public void publishTransactionCompleted(TransactionResponse transactionResponse) {
         try {
             TransactionCompletedEvent event = new TransactionCompletedEvent(
-                    transaction.getId(),
-                    transaction.getAccountId(),
-                    transaction.getAmount(),
-                    transaction.getType().name(),
-                    transaction.getStatus().name(),
-                    transaction.getTenantId(),
+                    transactionResponse.getId(),
+                    transactionResponse.getAccountId(),
+                    transactionResponse.getAmount(),
+                    transactionResponse.getType().name(),
+                    transactionResponse.getStatus().name(),
+                    transactionResponse.getTenantId(),
                     System.currentTimeMillis()
             );
 

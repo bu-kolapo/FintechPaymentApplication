@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -19,6 +20,13 @@ public class JwtUtil {
     private Key getSigningKey() {
         byte[] keyBytes = java.util.Base64.getDecoder().decode(SECRET_KEY);
         return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    public String extractToken(Authentication authentication) {
+        if (authentication == null || authentication.getCredentials() == null) {
+            return null;
+        }
+        return authentication.getCredentials().toString();
     }
 
     // Extract username (subject) from token

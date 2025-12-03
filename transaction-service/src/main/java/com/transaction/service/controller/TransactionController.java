@@ -1,5 +1,6 @@
 package com.transaction.service.controller;
 
+import com.transaction.service.dto.TransactionResponse;
 import com.transaction.service.model.Transaction;
 import com.transaction.service.services.TransactionService;
 import org.springframework.http.HttpStatus;
@@ -21,7 +22,7 @@ public class TransactionController {
     // ✅ Create a new transaction
     @PostMapping(value = ("/transactions"),produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public Mono<Transaction> createTransaction(@RequestBody Transaction transaction) {
+    public Mono<TransactionResponse> createTransaction(@RequestBody Transaction transaction) {
         return transactionService.processTransaction(transaction);
     }
 
