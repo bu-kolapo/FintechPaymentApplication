@@ -14,7 +14,7 @@ import java.time.Instant;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "paymentdb")
+@Document(collection = "payment_db")
 public class Payment {
     @Id
     private String id;

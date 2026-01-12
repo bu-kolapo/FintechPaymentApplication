@@ -74,43 +74,61 @@ public class CustomerServiceImpl implements CustomerService {
             return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
         }
 
-        // 1. CHECK IF PREVIOUS RESPONSE EXISTS
         return idempotencyService.exists(key)
+
+                // 🔍 DEBUG: CHECK IDEMPOTENCY KEY
+                .doOnNext(exists ->
+                        System.out.println("IDEMPOTENCY KEY [" + key + "] EXISTS = " + exists)
+                )
+
                 .flatMap(exists -> {
                     if (exists) {
-                        // Return same exact response every time
+                        // 🔁 DEBUG: RETURNING FROM REDIS
+                        System.out.println("RETURNING RESPONSE FROM REDIS");
                         return idempotencyService.getResponse(key, CustomerResponse.class);
                     }
 
-                    // 2. CREATE NEW CUSTOMER
-                    String tenantId = UUID.randomUUID().toString();
-                    Customer customer = Customer.builder()
-                            .tenantId(tenantId)
-                            .firstName(customerRequest.getFirstName())
-                            .lastName(customerRequest.getLastName())
-                            .email(customerRequest.getEmail())
-                            .phoneNumber(customerRequest.getPhoneNumber())
-                            .dateOfBirth(customerRequest.getDateOfBirth())
-                            .status(Customer.CustomerStatus.ACTIVE)
-                            .createdAt(Instant.now())
-                            .updatedAt(Instant.now())
-                            .accountIds(new ArrayList<>())
-                            .build();
-
-                    // 3. SAVE TO DATABASE
-                    return customerRepository.save(customer)
-                            .flatMap(savedCustomer -> {
+                    // ✅ CHECK IF CUSTOMER ALREADY EXISTS IN DB
+                    return customerRepository.findByEmail(customerRequest.getEmail())
+                            .flatMap(existingCustomer -> {
                                 CustomerResponse response =
-                                        mapToResponse(savedCustomer, "Customer registered successfully");
+                                        mapToResponse(existingCustomer, "Customer already registered");
 
-                                // **4. SAVE RESPONSE IN REDIS FOR IDEMPOTENCY**
+                                // ✅ STORE ONLY VALID SUCCESS RESPONSE
                                 return idempotencyService.storeResponse(key, response)
                                         .thenReturn(response);
                             })
-                            .onErrorMap(e -> new CustomerCreationException(
-                                    "Failed to register customer: " + e.getMessage(), e
-                            ));
-                });
+
+                            .switchIfEmpty(Mono.defer(() -> {
+
+                                String tenantId = UUID.randomUUID().toString();
+                                Customer customer = Customer.builder()
+                                        .tenantId(tenantId)
+                                        .firstName(customerRequest.getFirstName())
+                                        .lastName(customerRequest.getLastName())
+                                        .email(customerRequest.getEmail())
+                                        .phoneNumber(customerRequest.getPhoneNumber())
+                                        .dateOfBirth(customerRequest.getDateOfBirth())
+                                        .status(Customer.CustomerStatus.ACTIVE)
+                                        .createdAt(Instant.now())
+                                        .updatedAt(Instant.now())
+                                        .accountIds(new ArrayList<>())
+                                        .build();
+
+                                return customerRepository.save(customer)
+                                        .flatMap(savedCustomer -> {
+                                            CustomerResponse response =
+                                                    mapToResponse(savedCustomer, "Customer registered successfully");
+
+                                            // ✅ STORE SUCCESS RESPONSE FOR IDEMPOTENCY
+                                            return idempotencyService.storeResponse(key, response)
+                                                    .thenReturn(response);
+                                        });
+                            }));
+                })
+                .onErrorMap(e ->
+                        new CustomerCreationException("Failed to register customer: " + e.getMessage(), e)
+                );
     }
 
 

@@ -34,8 +34,9 @@ public class CustomerController {
             @RequestBody @Valid CustomerRequest request) {
 
         return customerService.registerCustomer(request)
-                .doOnSuccess(response -> {
-                    // Send WebSocket notification to all connected clients
+                // Ensure WebSocket notification happens inside reactive chain
+                .flatMap(response -> {
+                    // Send notification to clients
                     messagingTemplate.convertAndSend(
                             "/topic/customers",
                             new CustomerNotification(
@@ -45,8 +46,11 @@ public class CustomerController {
                                     Instant.now()
                             )
                     );
+                    return Mono.just(response); // continue chain
                 })
+                // Map the successful response to ResponseEntity
                 .map(ResponseEntity::ok)
+                // Handle service exceptions and return 400 with error message
                 .onErrorResume(CustomerCreationException.class, e ->
                         Mono.just(ResponseEntity
                                 .status(HttpStatus.BAD_REQUEST)
@@ -54,6 +58,8 @@ public class CustomerController {
                         )
                 );
     }
+
+
 
     @GetMapping("/customer/{id}")
     public Mono<ResponseEntity<CustomerResponse>> getCustomer(@PathVariable String id) {

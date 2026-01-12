@@ -16,7 +16,7 @@ import java.time.Instant;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "transactiondb")
+@Document(collection = "transaction_db")
 @CompoundIndexes({
         @CompoundIndex(name = "unique_idempotency_key", def = "{'idempotencyKey': 1}", unique = true)
 })
