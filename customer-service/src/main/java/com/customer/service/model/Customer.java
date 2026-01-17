@@ -11,7 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-@Document(collection = "customerdb")
+@Document(collection = "customer_db")
 @Data
 @Builder
 @AllArgsConstructor

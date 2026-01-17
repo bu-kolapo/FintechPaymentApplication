@@ -88,3 +88,32 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/FintechApp'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "1.27.0"
+
+      - name: Configure kubeconfig
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
+
+      - name: Deploy Customer Service
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          sed -i "s|customer-service:latest|${{ secrets.DOCKER_USERNAME }}/customer-service:$IMAGE_TAG|g" \
+            k8s/Fintech/payment-customer-services.yaml
+          
+          kubectl apply -f k8s/Fintech/payment-customer-services.yaml
+          kubectl rollout status deployment/customer-service -n customer-service
+

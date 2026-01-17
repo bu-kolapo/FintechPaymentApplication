@@ -1,6 +1,7 @@
 package com.customer.service.services;
 
 
+import com.commonlib.service.GlobalRateLimiter;
 import com.commonlib.service.IdempotencyService;
 import com.customer.service.dto.CustomerNotification;
 import com.customer.service.dto.CustomerRequest;
@@ -13,6 +14,8 @@ import com.customer.service.model.Customer;
 import com.customer.service.event.CustomerEvent;
 import com.customer.service.repository.CustomerRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+//import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -21,13 +24,10 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -40,6 +40,7 @@ public class CustomerServiceImpl implements CustomerService {
     private final RabbitTemplate rabbitTemplate;
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final GlobalRateLimiter globalRateLimiter;
 
     @Value("${rabbitmq.exchange.customer:customer-exchange}")
     private String customerExchange;
@@ -54,18 +55,19 @@ public class CustomerServiceImpl implements CustomerService {
 
 //    private final WebClient accountClient;
 
-    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,IdempotencyService idempotencyService) {
+    public CustomerServiceImpl(CustomerRepository customerRepository, KafkaTemplate<String, CustomerEvent> kafkaTemplate, RabbitTemplate rabbitTemplate,SimpMessagingTemplate messagingTemplate,IdempotencyService idempotencyService,GlobalRateLimiter globalRateLimiter) {
         this.customerRepository = customerRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.rabbitTemplate = rabbitTemplate;
         this.idempotencyService=idempotencyService;
         this.messagingTemplate=messagingTemplate;
+        this.globalRateLimiter=globalRateLimiter;
 //        this.accountClient= webClientBuilder.baseUrl("http://localhost:8085/api/v1/account").build();
     }
 
 
     @Override
-    @RateLimiter(name = "customerServiceRL")
+   @RateLimiter(name = "customerServiceRL")
     @CircuitBreaker(name = "customerServiceCB", fallbackMethod = "customerFallback")
     public Mono<CustomerResponse> registerCustomer(CustomerRequest customerRequest) {
 
@@ -74,43 +76,61 @@ public class CustomerServiceImpl implements CustomerService {
             return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
         }
 
-        // 1. CHECK IF PREVIOUS RESPONSE EXISTS
         return idempotencyService.exists(key)
+
+                // 🔍 DEBUG: CHECK IDEMPOTENCY KEY
+                .doOnNext(exists ->
+                        System.out.println("IDEMPOTENCY KEY [" + key + "] EXISTS = " + exists)
+                )
+
                 .flatMap(exists -> {
                     if (exists) {
-                        // Return same exact response every time
+                        // 🔁 DEBUG: RETURNING FROM REDIS
+                        System.out.println("RETURNING RESPONSE FROM REDIS");
                         return idempotencyService.getResponse(key, CustomerResponse.class);
                     }
 
-                    // 2. CREATE NEW CUSTOMER
-                    String tenantId = UUID.randomUUID().toString();
-                    Customer customer = Customer.builder()
-                            .tenantId(tenantId)
-                            .firstName(customerRequest.getFirstName())
-                            .lastName(customerRequest.getLastName())
-                            .email(customerRequest.getEmail())
-                            .phoneNumber(customerRequest.getPhoneNumber())
-                            .dateOfBirth(customerRequest.getDateOfBirth())
-                            .status(Customer.CustomerStatus.ACTIVE)
-                            .createdAt(Instant.now())
-                            .updatedAt(Instant.now())
-                            .accountIds(new ArrayList<>())
-                            .build();
-
-                    // 3. SAVE TO DATABASE
-                    return customerRepository.save(customer)
-                            .flatMap(savedCustomer -> {
+                    // ✅ CHECK IF CUSTOMER ALREADY EXISTS IN DB
+                    return customerRepository.findByEmail(customerRequest.getEmail())
+                            .flatMap(existingCustomer -> {
                                 CustomerResponse response =
-                                        mapToResponse(savedCustomer, "Customer registered successfully");
+                                        mapToResponse(existingCustomer, "Customer already registered");
 
-                                // **4. SAVE RESPONSE IN REDIS FOR IDEMPOTENCY**
+                                // ✅ STORE ONLY VALID SUCCESS RESPONSE
                                 return idempotencyService.storeResponse(key, response)
                                         .thenReturn(response);
                             })
-                            .onErrorMap(e -> new CustomerCreationException(
-                                    "Failed to register customer: " + e.getMessage(), e
-                            ));
-                });
+
+                            .switchIfEmpty(Mono.defer(() -> {
+
+                                String tenantId = UUID.randomUUID().toString();
+                                Customer customer = Customer.builder()
+                                        .tenantId(tenantId)
+                                        .firstName(customerRequest.getFirstName())
+                                        .lastName(customerRequest.getLastName())
+                                        .email(customerRequest.getEmail())
+                                        .phoneNumber(customerRequest.getPhoneNumber())
+                                        .dateOfBirth(customerRequest.getDateOfBirth())
+                                        .status(Customer.CustomerStatus.ACTIVE)
+                                        .createdAt(Instant.now())
+                                        .updatedAt(Instant.now())
+                                        .accountIds(new ArrayList<>())
+                                        .build();
+
+                                return customerRepository.save(customer)
+                                        .flatMap(savedCustomer -> {
+                                            CustomerResponse response =
+                                                    mapToResponse(savedCustomer, "Customer registered successfully");
+
+                                            // ✅ STORE SUCCESS RESPONSE FOR IDEMPOTENCY
+                                            return idempotencyService.storeResponse(key, response)
+                                                    .thenReturn(response);
+                                        });
+                            }));
+                })
+                .onErrorMap(e ->
+                        new CustomerCreationException("Failed to register customer: " + e.getMessage(), e)
+                );
     }
 
 
@@ -363,7 +383,23 @@ public class CustomerServiceImpl implements CustomerService {
     public Mono<Long> countActiveCustomers() {
         return customerRepository.countByStatus(Customer.CustomerStatus.ACTIVE);
     }
-
+//
+//
+//    public String processCustomerRequest(String customerId) {
+//        RateLimiter rateLimiter = globalRateLimiter.getRateLimiter();
+//
+//        try {
+//            RateLimiter.decorateCheckedRunnable(rateLimiter, () -> {
+//                // Actual business logic here
+//                System.out.println("Processing customer: " + customerId);
+//            }).run();
+//        } catch (RequestNotPermitted e) {
+//            throw new RuntimeException("429 Too Many Requests - Global rate limit exceeded");
+//        }
+//
+//        // Return your business response
+//        return "{ \"message\": \"Customer already registered\", \"customerId\": \"" + customerId + "\" }";
+//    }
 
     // Helper method to map Customer to CustomerResponse
     private CustomerResponse mapToResponse(Customer customer, String message) {

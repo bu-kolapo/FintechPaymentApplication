@@ -1,8 +1,10 @@
+# Namespace
 apiVersion: v1
 kind: Namespace
 metadata:
   name: customer-service
 ---
+# ConfigMap for environment variables
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,8 +15,9 @@ data:
   SPRING_RABBITMQ_HOST: rabbitmq
   SPRING_RABBITMQ_USERNAME: guest
   SPRING_RABBITMQ_PASSWORD: guest1
-  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customerdb
+  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customer_db
 ---
+# Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,35 +35,37 @@ spec:
     spec:
       containers:
         - name: customer-service
-          image: your-dockerhub-username/customer-service:latest
+          image: dockerhub-username/customer-service:${IMAGE_TAG}   # Local Docker image
+          imagePullPolicy:  Always                  #IfNotPresent
           ports:
             - containerPort: 8086
-          env:
-            - name: SPRING_REDIS_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: customer-service-config
-                  key: SPRING_REDIS_HOST
-            - name: SPRING_RABBITMQ_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: customer-service-config
-                  key: SPRING_RABBITMQ_HOST
-            - name: SPRING_DATA_MONGODB_URI
-              valueFrom:
-                configMapKeyRef:
-                  name: customer-service-config
-                  key: SPRING_DATA_MONGODB_URI
+          envFrom:
+            - configMapRef:
+                name: customer-service-config
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8086
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 30
 ---
+# Service (NodePort for local access)
 apiVersion: v1
 kind: Service
 metadata:
   name: customer-service
   namespace: customer-service
 spec:
-  type: LoadBalancer
+  type: NodePort
+  selector:
+    app: customer-service
   ports:
     - port: 8086
       targetPort: 8086
-  selector:
-    app: customer-service
+      nodePort: 30086

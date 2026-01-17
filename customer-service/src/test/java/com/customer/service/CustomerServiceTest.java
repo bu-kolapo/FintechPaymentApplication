@@ -1,5 +1,6 @@
 package com.customer.service;
 
+import com.commonlib.service.GlobalRateLimiter;
 import com.commonlib.service.IdempotencyService;
 import com.customer.service.dto.CustomerRequest;
 import com.customer.service.model.Customer;
@@ -42,6 +43,9 @@ import java.util.List;
     private IdempotencyService idempotencyService;
 
     @Mock
+    private GlobalRateLimiter globalRateLimiter;
+
+    @Mock
     private RabbitTemplate rabbitTemplate;
 
     @Mock
@@ -51,6 +55,7 @@ import java.util.List;
     private SimpMessagingTemplate simpMessagingTemplate;
 
     private CustomerServiceImpl customerService;
+
 
     @BeforeEach
     void setUp() {
@@ -62,7 +67,8 @@ import java.util.List;
                 kafkaTemplate,
                 rabbitTemplate,
                 simpMessagingTemplate,
-                idempotencyService
+                idempotencyService,
+                globalRateLimiter
         );
     }
 

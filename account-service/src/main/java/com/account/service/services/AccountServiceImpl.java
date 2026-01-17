@@ -57,43 +57,44 @@ public class AccountServiceImpl implements AccountService{
             return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
         }
 
-        // 1️⃣ Check Redis
         return idempotencyService.exists(key)
                 .flatMap(exists -> {
                     if (exists) {
+                        // 1️⃣ Return EXACT cached response (same timestamps)
                         return idempotencyService.getResponse(key, AccountResponse.class);
-                    } else {
-                        // ✅ Build the account entity
-                        Account account = Account.builder()
-                                .tenantId(accountRequest.getTenantId())
-                                .customerId(accountRequest.getCustomerId())
-                                .accountNumber(generateAccountNumber())
-                                .currency(accountRequest.getCurrency())
-                                .balance(accountRequest.getBalance() != null ? accountRequest.getBalance() : BigDecimal.ZERO)
-                                .status(Account.AccountStatus.ACTIVE)
-                                .createdAt(Instant.now())
-                                .updatedAt(Instant.now())
-                                .build();
-
-                        // ✅ Save to DB reactively, then publish event
-                        return accountRepository.save(account)
-                                .flatMap(savedAccount -> {
-                                    // ✅ Create and populate the event after save
-                                    AccountCreatedEvent event = new AccountCreatedEvent();
-                                    event.setAccountId(savedAccount.getId());
-                                    event.setCustomerId(savedAccount.getCustomerId());
-                                    event.setTenantId(savedAccount.getTenantId());
-
-                                    // ✅ Publish the event
-                                    publishEvents(event, "ACCOUNT_CREATED");
-
-                                    // ✅ Return the response
-                                    return Mono.just(mapToResponse(savedAccount));
-                                })
-                                .onErrorMap(e -> new AccountCreationException(
-                                        "Failed to create account: " + e.getMessage(), e
-                                ));
                     }
+
+                    // 2️⃣ Prepare entity
+                    Account account = Account.builder()
+                            .tenantId(accountRequest.getTenantId())
+                            .customerId(accountRequest.getCustomerId())
+                            .accountNumber(generateAccountNumber())
+                            .currency(accountRequest.getCurrency())
+                            .balance(accountRequest.getBalance() != null ? accountRequest.getBalance() : BigDecimal.ZERO)
+                            .status(Account.AccountStatus.ACTIVE)
+                            .createdAt(Instant.now())
+                            .updatedAt(Instant.now())
+                            .build();
+
+                    // 3️⃣ Save DB → publish event → map to response
+                    return accountRepository.save(account)
+                            .flatMap(savedAccount -> {
+
+                                AccountCreatedEvent event = new AccountCreatedEvent();
+                                event.setAccountId(savedAccount.getId());
+                                event.setCustomerId(savedAccount.getCustomerId());
+                                event.setTenantId(savedAccount.getTenantId());
+                                publishEvents(event, "ACCOUNT_CREATED");
+
+                                AccountResponse response = mapToResponse(savedAccount);
+
+                                // ⭐ 4️⃣ Store response in Redis BEFORE returning
+                                return idempotencyService.storeResponse(key, response)
+                                        .thenReturn(response);
+                            })
+                            .onErrorMap(e -> new AccountCreationException(
+                                    "Failed to create account: " + e.getMessage(), e
+                            ));
                 });
     }
 
@@ -114,6 +115,7 @@ public class AccountServiceImpl implements AccountService{
                 )
                 .switchIfEmpty(Mono.error(new AccountNotFoundException("Customer not found with id: " + id)));
     }
+
 
 
 
