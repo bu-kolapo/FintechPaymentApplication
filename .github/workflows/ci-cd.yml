@@ -112,7 +112,7 @@ jobs:
         run: |
           IMAGE_TAG=${{ github.sha }}
           sed -i "s|customer-service:latest|${{ secrets.DOCKER_USERNAME }}/customer-service:$IMAGE_TAG|g" \
-            k8s/Fintech/payment-customer-services.yaml
+            k8s\fintech-payment-deployment.yaml
           
-          kubectl apply -f k8s/Fintech/payment-customer-services.yaml
+          kubectl apply -f k8s\fintech-payment-deployment.yaml
           kubectl rollout status deployment/customer-service -n customer-service
