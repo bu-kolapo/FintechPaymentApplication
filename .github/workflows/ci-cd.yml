@@ -114,5 +114,5 @@ jobs:
           sed -i "s|customer-service:latest|${{ secrets.DOCKER_USERNAME }}/customer-service:$IMAGE_TAG|g" \
             k8s\fintech-payment-deployment.yaml
           
-          kubectl apply -f k8s\fintech-payment-deployment.yaml
+          kubectl apply -f .\k8s\fintech-payment-deployment.yaml
           kubectl rollout status deployment/customer-service -n customer-service
