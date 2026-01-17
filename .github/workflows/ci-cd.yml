@@ -101,7 +101,7 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: "1.27.0"
+          version: "latest"
 
       - name: Configure kubeconfig
         run: |
@@ -116,3 +116,4 @@ jobs:
           
           kubectl apply -f k8s/Fintech/payment-customer-services.yaml
           kubectl rollout status deployment/customer-service -n customer-service
+
