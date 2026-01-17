@@ -1,4 +1,3 @@
-
 # Namespace
 apiVersion: v1
 kind: Namespace
@@ -16,7 +15,7 @@ data:
   SPRING_RABBITMQ_HOST: rabbitmq
   SPRING_RABBITMQ_USERNAME: guest
   SPRING_RABBITMQ_PASSWORD: guest1
-  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customerdb
+  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customer_db
 ---
 # Deployment
 apiVersion: apps/v1
@@ -36,14 +35,25 @@ spec:
     spec:
       containers:
         - name: customer-service
-#          image: bukolapo/customer-service:latest this pulls from docker hub,te down puled locally from project
-          image: customer-service:latest   # Local Docker image
-          imagePullPolicy: IfNotPresent
+          image: dockerhub-username/customer-service:${IMAGE_TAG}   # Local Docker image
+          imagePullPolicy:  Always                  #IfNotPresent
           ports:
             - containerPort: 8086
           envFrom:
             - configMapRef:
                 name: customer-service-config
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8086
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 30
 ---
 # Service (NodePort for local access)
 apiVersion: v1
