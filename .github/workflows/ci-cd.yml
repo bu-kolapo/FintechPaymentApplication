@@ -102,12 +102,17 @@ jobs:
         with:
           version: "latest"
 
+#      - name: Configure kubeconfig
+#        run: |
+#          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
+#          export KUBECONFIG=$PWD/kubeconfig
       - name: Configure kubeconfig
         run: |
-          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
-          export KUBECONFIG=$PWD/kubeconfig
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > kubeconfig
+          echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+    
 
-#      - name: Deploy Customer Service
+    #      - name: Deploy Customer Service
 #        run: |
 #          IMAGE_TAG=${{ github.sha }}
 #          sed -i "s|customer-service:latest|${{ secrets.DOCKER_USERNAME }}/customer-service:$IMAGE_TAG|g" \
