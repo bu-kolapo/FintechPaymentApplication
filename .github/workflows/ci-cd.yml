@@ -9,8 +9,8 @@ on:
 jobs:
   test:
     name: Run Tests
-    runs-on: ubuntu-latest
-    
+    runs-on: self-hosted  # ✅ Changed to self-hosted
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,16 +24,13 @@ jobs:
 
       - name: Build and Install Dependencies
         run: mvn clean install -DskipTests
+        shell: powershell
 
       - name: Run Unit Tests
         run: |
           cd customer-service
           mvn test -Dtest=CustomerServiceTest
-
-#      - name: Run Integration Tests
-#        run: |
-#          cd customer-service
-#          mvn test -Dtest=CustomerServiceIntegrationTest
+        shell: powershell
 
       - name: Upload Test Results
         if: always()
@@ -42,12 +39,12 @@ jobs:
           name: test-results
           path: customer-service/target/surefire-reports/
 
-  build:
-    name: Build and Push Docker Image
+  build-and-deploy:
+    name: Build and Deploy Locally
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # ✅ Changed to self-hosted
     if: github.event_name == 'push' && github.ref == 'refs/heads/FintechApp'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,74 +58,137 @@ jobs:
 
       - name: Build Project
         run: mvn clean install -DskipTests
+        shell: powershell
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKER_USERNAME }}/customer-service
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./customer-service
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-  deploy:
-    name: Deploy to Kubernetes (kind)
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/FintechApp'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: latest
-
-      - name: Create kind cluster
-        uses: helm/kind-action@v1.10.0
-
-      - name: Verify cluster
+      - name: Build Docker Image Locally
         run: |
+          $IMAGE_TAG = "${{ github.sha }}"
+          echo "Building Docker image with tag: $IMAGE_TAG"
+          
+          # Build the image
+          docker build -t customer-service:${IMAGE_TAG} ./customer-service
+          
+          # Tag as latest
+          docker tag customer-service:${IMAGE_TAG} customer-service:latest
+          
+          echo "Docker image built successfully!"
+          docker images | Select-String "customer-service"
+        shell: powershell
+
+      - name: Set kubectl context to Docker Desktop
+        run: |
+          kubectl config use-context docker-desktop
+          kubectl config current-context
+        shell: powershell
+
+      - name: Verify Kubernetes Cluster
+        run: |
+          echo "Checking cluster connection..."
           kubectl cluster-info
           kubectl get nodes
+        shell: powershell
 
-      - name: Deploy Customer Service
+      - name: Deploy to Local Kubernetes
         run: |
-          IMAGE_TAG=${{ github.sha }}
+          $IMAGE_TAG = "${{ github.sha }}"
+          
+          echo "Deploying customer-service with image tag: $IMAGE_TAG"
+          
+          # Replace image tag in deployment file
+          $content = Get-Content k8s/fintech-payment-deployment.yaml -Raw
+          $content = $content -replace '\$\{IMAGE_TAG\}', $IMAGE_TAG
+          $content = $content -replace 'customer-service:latest', "customer-service:${IMAGE_TAG}"
+          $content | Set-Content k8s/fintech-payment-deployment-temp.yaml
+          
+          # Apply the deployment
+          kubectl apply -f k8s/fintech-payment-deployment-temp.yaml
+          
+          echo "Deployment applied. Waiting for rollout..."
+        shell: powershell
 
-          sed -i "s|\${IMAGE_TAG}|${IMAGE_TAG}|g" k8s/fintech-payment-deployment.yaml
+      - name: Wait for Deployment
+        run: |
+          echo "Waiting for deployment to complete (timeout: 5 minutes)..."
+          kubectl rollout status deployment/customer-service -n customer-service --timeout=5m
+        shell: powershell
+        continue-on-error: true
 
-          kubectl apply -f k8s/fintech-payment-deployment.yaml
-
-          kubectl rollout status deployment/customer-service -n customer-service || true
-
-          echo "==== POD STATUS ===="
+      - name: Check Deployment Status
+        run: |
+          echo "==== NAMESPACE ===="
+          kubectl get namespace customer-service
+          
+          echo ""
+          echo "==== DEPLOYMENTS ===="
+          kubectl get deployments -n customer-service
+          
+          echo ""
+          echo "==== REPLICA SETS ===="
+          kubectl get rs -n customer-service
+          
+          echo ""
+          echo "==== PODS ===="
           kubectl get pods -n customer-service -o wide
+          
+          echo ""
+          echo "==== SERVICES ===="
+          kubectl get services -n customer-service
+        shell: powershell
 
-          echo "==== POD DESCRIBE ===="
+      - name: Describe Pods (Debugging)
+        if: always()
+        run: |
+          echo "==== POD DETAILS ===="
           kubectl describe pods -n customer-service
+        shell: powershell
 
+      - name: Get Pod Logs
+        if: always()
+        run: |
           echo "==== POD LOGS ===="
-          for pod in $(kubectl get pods -n customer-service -o name); do
-            kubectl logs -n customer-service $pod --all-containers || true
-          done
+          $pods = kubectl get pods -n customer-service -o jsonpath='{.items[*].metadata.name}'
+          
+          if ($pods) {
+            foreach ($pod in $pods.Split(" ")) {
+              if ($pod) {
+                echo ""
+                echo "Logs for pod: $pod"
+                echo "================================"
+                kubectl logs -n customer-service $pod --all-containers --tail=100 2>&1
+              }
+            }
+          } else {
+            echo "No pods found in customer-service namespace"
+          }
+        shell: powershell
 
-          exit 1
+      - name: Check Deployment Events
+        if: always()
+        run: |
+          echo "==== NAMESPACE EVENTS ===="
+          kubectl get events -n customer-service --sort-by='.lastTimestamp'
+        shell: powershell
+
+      - name: Cleanup Temp Files
+        if: always()
+        run: |
+          if (Test-Path k8s/fintech-payment-deployment-temp.yaml) {
+            Remove-Item k8s/fintech-payment-deployment-temp.yaml
+          }
+        shell: powershell
+
+      - name: Final Status
+        if: success()
+        run: |
+          echo ""
+          echo "✅ ================================"
+          echo "✅ DEPLOYMENT SUCCESSFUL!"
+          echo "✅ ================================"
+          echo ""
+          echo "Access your service at:"
+          kubectl get service customer-service -n customer-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}:{.spec.ports[0].port}' 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            $nodePort = kubectl get service customer-service -n customer-service -o jsonpath='{.spec.ports[0].nodePort}'
+            echo "http://localhost:$nodePort"
+          }
+        shell: powershell

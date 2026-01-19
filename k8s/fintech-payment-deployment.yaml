@@ -1,23 +1,17 @@
-# Namespace
 apiVersion: v1
 kind: Namespace
 metadata:
   name: customer-service
 ---
-# ConfigMap for environment variables
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: customer-service-config
   namespace: customer-service
 data:
-  SPRING_REDIS_HOST: redis
-  SPRING_RABBITMQ_HOST: rabbitmq
-  SPRING_RABBITMQ_USERNAME: guest
-  SPRING_RABBITMQ_PASSWORD: guest1
-  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customer_db
+  # Add your config here
+  SPRING_PROFILES_ACTIVE: "local"
 ---
-# Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,37 +29,107 @@ spec:
     spec:
       containers:
         - name: customer-service
-          image: dockerhub-username/customer-service:${IMAGE_TAG}   # Local Docker image
-          imagePullPolicy:  Always                  #IfNotPresent
+          image: customer-service:latest  # ✅ Local image name
+          imagePullPolicy: Never  # ✅ IMPORTANT: Don't try to pull from registry
           ports:
             - containerPort: 8086
           envFrom:
             - configMapRef:
                 name: customer-service-config
-          readinessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8086
-            initialDelaySeconds: 10
-            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8086
             initialDelaySeconds: 30
             periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8086
+            initialDelaySeconds: 10
+            periodSeconds: 10
 ---
-# Service (NodePort for local access)
 apiVersion: v1
 kind: Service
 metadata:
   name: customer-service
   namespace: customer-service
 spec:
-  type: NodePort
+  type: LoadBalancer  # or NodePort for local testing
   selector:
     app: customer-service
   ports:
-    - port: 8086
+    - protocol: TCP
+      port: 8086
       targetPort: 8086
-      nodePort: 30086
+## Namespace
+#apiVersion: v1
+#kind: Namespace
+#metadata:
+#  name: customer-service
+#---
+## ConfigMap for environment variables
+#apiVersion: v1
+#kind: ConfigMap
+#metadata:
+#  name: customer-service-config
+#  namespace: customer-service
+#data:
+#  SPRING_REDIS_HOST: redis
+#  SPRING_RABBITMQ_HOST: rabbitmq
+#  SPRING_RABBITMQ_USERNAME: guest
+#  SPRING_RABBITMQ_PASSWORD: guest1
+#  SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/customer_db
+#---
+## Deployment
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+#  name: customer-service
+#  namespace: customer-service
+#spec:
+#  replicas: 2
+#  selector:
+#    matchLabels:
+#      app: customer-service
+#  template:
+#    metadata:
+#      labels:
+#        app: customer-service
+#    spec:
+#      containers:
+#        - name: customer-service
+#          image: dockerhub-username/customer-service:${IMAGE_TAG}   # Local Docker image
+#          imagePullPolicy:  Always                  #IfNotPresent
+#          ports:
+#            - containerPort: 8086
+#          envFrom:
+#            - configMapRef:
+#                name: customer-service-config
+#          readinessProbe:
+#            httpGet:
+#              path: /actuator/health
+#              port: 8086
+#            initialDelaySeconds: 10
+#            periodSeconds: 10
+#          livenessProbe:
+#            httpGet:
+#              path: /actuator/health
+#              port: 8086
+#            initialDelaySeconds: 30
+#            periodSeconds: 30
+#---
+## Service (NodePort for local access)
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: customer-service
+#  namespace: customer-service
+#spec:
+#  type: NodePort
+#  selector:
+#    app: customer-service
+#  ports:
+#    - port: 8086
+#      targetPort: 8086
+#      nodePort: 30086
