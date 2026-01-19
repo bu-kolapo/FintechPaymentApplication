@@ -118,4 +118,17 @@ jobs:
 
           kubectl apply -f k8s/fintech-payment-deployment.yaml
 
-          kubectl rollout status deployment/customer-service -n customer-service
+          kubectl rollout status deployment/customer-service -n customer-service || true
+
+          echo "==== POD STATUS ===="
+          kubectl get pods -n customer-service -o wide
+
+          echo "==== POD DESCRIBE ===="
+          kubectl describe pods -n customer-service
+
+          echo "==== POD LOGS ===="
+          for pod in $(kubectl get pods -n customer-service -o name); do
+            kubectl logs -n customer-service $pod --all-containers || true
+          done
+
+          exit 1
