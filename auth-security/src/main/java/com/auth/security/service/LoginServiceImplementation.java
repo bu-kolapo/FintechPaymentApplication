@@ -51,12 +51,17 @@ public class LoginServiceImplementation implements ReactiveUserDetailsService {
 
     // ✅ This method performs login verification and returns JWT token
     public Mono<String> loginAndGenerateToken(String username, String rawPassword) {
+
         System.out.println("LOGIN METHOD CALLED:");
         System.out.println("Username = [" + username + "]");
         System.out.println("Password = [" + rawPassword + "]");
         return userAuthenticationRepository.findByUsername(username)
          .switchIfEmpty(Mono.error(new BadCredentialsException("User not found")))
                 .flatMap(user -> {
+                    String dbPassword = user.getPassword();
+                    System.out.println("DB PASSWORD = [" + dbPassword + "]");
+                    System.out.println("DB LENGTH = " + (dbPassword != null ? dbPassword.length() : "null"));
+
                     if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
                         return Mono.error(new BadCredentialsException("Invalid password"));
                     }

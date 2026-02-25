@@ -13,6 +13,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -25,10 +26,26 @@ import java.util.Arrays;
 public class GlobalSecurityConfiguration {
 
     private final JwtRequestFilter jwtRequestFilter;
-   @Bean
+//   @Bean
+//    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+//        return http
+//                .csrf(ServerHttpSecurity.CsrfSpec::disable)
+//                .authorizeExchange(exchanges -> exchanges
+//                        .pathMatchers("/api/v1/login", "/api/v1/register/customer").permitAll()
+//                        .anyExchange().authenticated()
+//                )
+//                .addFilterAt(jwtRequestFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+//                .build();
+//    }
+
+    @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
+                .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
+                .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/api/v1/login", "/api/v1/register/customer").permitAll()
                         .anyExchange().authenticated()
