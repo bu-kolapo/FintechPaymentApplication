@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class AccountResponse {
@@ -21,12 +21,12 @@ public class AccountResponse {
     private String customerId;
     private String accountNumber;
     private String currency;
-    private BigDecimal balance;
+    private String message;
+    private BigDecimal openingBalance;
     private Account.AccountStatus status;
     private Instant createdAt;
     private Instant updatedAt;
 
 
-    public AccountResponse(Object o, String message) {
-    }
+
 }

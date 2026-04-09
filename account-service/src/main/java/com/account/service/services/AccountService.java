@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 
 public interface AccountService {
 
-    Mono<AccountResponse> createAccount(AccountRequest accountRequest);
+    Mono<AccountResponse> createAccount(AccountRequest accountRequest,String idempotencyKey);
     Mono<AccountResponse>  getAccountById(String id);
     Flux<AccountResponse> getAllAccounts();
     Mono<AccountDTO> updateBalance(String accountId, BigDecimal newBalance);

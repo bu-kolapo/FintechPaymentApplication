@@ -67,70 +67,56 @@ public class CustomerServiceImpl implements CustomerService {
 
 
     @Override
-   @RateLimiter(name = "customerServiceRL")
+    @RateLimiter(name = "customerServiceRL")
     @CircuitBreaker(name = "customerServiceCB", fallbackMethod = "customerFallback")
-    public Mono<CustomerResponse> registerCustomer(CustomerRequest customerRequest) {
+    public Mono<CustomerResponse> registerCustomer(CustomerRequest customerRequest, String idempotencyKey) {
 
-        String key = customerRequest.getIdempotencyKey();
-        if (key == null || key.isBlank()) {
-            return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Mono.error(new RuntimeException("Idempotency-Key header is required"));
         }
 
-        return idempotencyService.exists(key)
-
-                // 🔍 DEBUG: CHECK IDEMPOTENCY KEY
-                .doOnNext(exists ->
-                        System.out.println("IDEMPOTENCY KEY [" + key + "] EXISTS = " + exists)
-                )
-
+        return idempotencyService.exists(idempotencyKey)
                 .flatMap(exists -> {
                     if (exists) {
-                        // 🔁 DEBUG: RETURNING FROM REDIS
-                        System.out.println("RETURNING RESPONSE FROM REDIS");
-                        return idempotencyService.getResponse(key, CustomerResponse.class);
+                        return idempotencyService.getResponse(idempotencyKey, CustomerResponse.class);
                     }
-
-                    // ✅ CHECK IF CUSTOMER ALREADY EXISTS IN DB
-                    return customerRepository.findByEmail(customerRequest.getEmail())
-                            .flatMap(existingCustomer -> {
-                                CustomerResponse response =
-                                        mapToResponse(existingCustomer, "Customer already registered");
-
-                                // ✅ STORE ONLY VALID SUCCESS RESPONSE
-                                return idempotencyService.storeResponse(key, response)
-                                        .thenReturn(response);
-                            })
-
-                            .switchIfEmpty(Mono.defer(() -> {
-
-                                String tenantId = UUID.randomUUID().toString();
-                                Customer customer = Customer.builder()
-                                        .tenantId(tenantId)
-                                        .firstName(customerRequest.getFirstName())
-                                        .lastName(customerRequest.getLastName())
-                                        .email(customerRequest.getEmail())
-                                        .phoneNumber(customerRequest.getPhoneNumber())
-                                        .dateOfBirth(customerRequest.getDateOfBirth())
-                                        .status(Customer.CustomerStatus.ACTIVE)
-                                        .createdAt(Instant.now())
-                                        .updatedAt(Instant.now())
-                                        .accountIds(new ArrayList<>())
-                                        .build();
-
-                                return customerRepository.save(customer)
-                                        .flatMap(savedCustomer -> {
-                                            CustomerResponse response =
-                                                    mapToResponse(savedCustomer, "Customer registered successfully");
-
-                                            // ✅ STORE SUCCESS RESPONSE FOR IDEMPOTENCY
-                                            return idempotencyService.storeResponse(key, response)
-                                                    .thenReturn(response);
-                                        });
-                            }));
+                    return resolveAndRegisterCustomer(customerRequest, idempotencyKey);
                 })
-                .onErrorMap(e ->
-                        new CustomerCreationException("Failed to register customer: " + e.getMessage(), e)
-                );
+                .onErrorMap(e -> new CustomerCreationException(
+                        "Failed to register customer: " + e.getMessage(), e
+                ));
+    }
+
+    private Mono<CustomerResponse> resolveAndRegisterCustomer(CustomerRequest request, String idempotencyKey) {
+        return customerRepository.findByEmail(request.getEmail())
+                .flatMap(existingCustomer -> {
+                    CustomerResponse response = mapToResponse(existingCustomer, "Customer already registered");
+                    return idempotencyService.storeResponse(idempotencyKey, response)
+                            .thenReturn(response);
+                })
+                .switchIfEmpty(Mono.defer(() -> createAndSaveCustomer(request, idempotencyKey)));
+    }
+
+    private Mono<CustomerResponse> createAndSaveCustomer(CustomerRequest request, String idempotencyKey) {
+        Customer customer = Customer.builder()
+                .tenantId(UUID.randomUUID().toString())
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .email(request.getEmail())
+                .phoneNumber(request.getPhoneNumber())
+                .dateOfBirth(request.getDateOfBirth())
+                .status(Customer.CustomerStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .accountIds(new ArrayList<>())
+                .build();
+
+        return customerRepository.save(customer)
+                .flatMap(savedCustomer -> {
+                    CustomerResponse response = mapToResponse(savedCustomer, "Customer registered successfully");
+                    return idempotencyService.storeResponse(idempotencyKey, response)
+                            .thenReturn(response);
+                });
     }
 
 
@@ -198,6 +184,7 @@ public class CustomerServiceImpl implements CustomerService {
                         .firstName(customer.getFirstName())
                         .lastName(customer.getLastName())
                         .email(customer.getEmail())
+                        .message(" Details for Customer Id , "+ customer.getId())
                         .phoneNumber(customer.getPhoneNumber())
                         .dateOfBirth(customer.getDateOfBirth())
                         .status(customer.getStatus())
@@ -232,20 +219,20 @@ public class CustomerServiceImpl implements CustomerService {
                 .onErrorMap(e -> new CustomerUpdateException(
                         "Failed to update customer: " + e.getMessage(), e));
     }
-    private Mono<CustomerResponse> customerFallback(CustomerRequest request, Throwable ex) {
+    private Mono<CustomerResponse> customerFallback(CustomerRequest request,
+                                                    String idempotencyKey,
+                                                    Throwable ex) {
         return Mono.just(
                 CustomerResponse.builder()
                         .firstName(request.getFirstName())
                         .lastName(request.getLastName())
                         .email(request.getEmail())
                         .phoneNumber(request.getPhoneNumber())
-                        .message("Customer Registration already successful")
+                        .message("Customer service is currently unavailable. Please try again later.")
                         .status(Customer.CustomerStatus.FAILED)
                         .build()
-
         );
     }
-
 
     @Override
     public Mono<Void> deleteCustomer(String id) {
@@ -275,7 +262,7 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public Mono<CustomerResponse> activateCustomer(Long id) {
+    public Mono<CustomerResponse> activateCustomer(String id) {
         return customerRepository.findById(id)
                 .switchIfEmpty(Mono.error(new CustomerNotFoundException("Customer not found with id: " + id)))
                 .flatMap(customer -> {

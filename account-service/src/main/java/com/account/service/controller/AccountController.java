@@ -3,8 +3,8 @@ package com.account.service.controller;
 import com.account.service.dto.AccountDTO;
 import com.account.service.dto.AccountNotification;
 import com.account.service.dto.AccountRequest;
-import com.account.service.exception.AccountCreationException;
 import com.account.service.dto.AccountResponse;
+import com.account.service.exception.AccountCreationException;
 import com.account.service.services.AccountService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,54 +22,56 @@ import java.util.Map;
 @RequestMapping("/api/v1")
 public class AccountController {
 
-    private  final AccountService accountService;
+    private final AccountService accountService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public AccountController(AccountService accountService, SimpMessagingTemplate messagingTemplate) {
+    public AccountController(AccountService accountService,
+                             SimpMessagingTemplate messagingTemplate) {
         this.accountService = accountService;
         this.messagingTemplate = messagingTemplate;
     }
 
     @PostMapping("/create/account")
-    public Mono<ResponseEntity<AccountResponse>> createCustomer(
-            @RequestBody @Valid AccountRequest accountRequest) {
+    public Mono<ResponseEntity<AccountResponse>> createAccount(
+            @RequestBody @Valid AccountRequest accountRequest,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
 
-        return accountService.createAccount(accountRequest)
-                .doOnSuccess(response -> {
-                    // Send WebSocket notification to all connected clients
-                    messagingTemplate.convertAndSend(
-                            "/topic/accounts",
-                            new AccountNotification(
-                                    response.getId(),
-                                    response.getAccountNumber(),
-                                    "ACCOUNT_CREATED",
-                                    Instant.now()
-                            )
-                    );
-                })
-                .map(ResponseEntity::ok)
+        return accountService.createAccount(accountRequest, idempotencyKey)
+                .doOnSuccess(response ->
+                        messagingTemplate.convertAndSend(
+                                "/topic/accounts",
+                                new AccountNotification(
+                                        response.getId(),
+                                        response.getAccountNumber(),
+                                        "ACCOUNT_CREATED",
+                                        Instant.now()
+                                )
+                        )
+                )
+                .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response))
+                .onErrorResume(IllegalArgumentException.class, e ->
+                        Mono.just(ResponseEntity
+                                .badRequest()
+                                .<AccountResponse>build())
+                )
                 .onErrorResume(AccountCreationException.class, e ->
                         Mono.just(ResponseEntity
-                                .status(HttpStatus.BAD_REQUEST)
-                                .body(new AccountResponse(null, e.getMessage()))
-                        )
+                                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                .<AccountResponse>build())
                 );
     }
 
     @GetMapping("/account/{id}")
-    public Mono<ResponseEntity<AccountResponse>> getAccount(@PathVariable String id) {
+    public Mono<ResponseEntity<AccountResponse>> getAccountById(@PathVariable String id) {
         return accountService.getAccountById(id)
                 .map(ResponseEntity::ok)
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+                .onErrorResume(AccountCreationException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<AccountResponse>build())
+                );
     }
 
-
     @GetMapping("/accounts")
-    public Flux<AccountResponse> getAllAccounts(
-            @RequestParam(required = false) String tenantId) {
-        if (tenantId != null) {
-            return accountService.getAllAccounts();
-        }
+    public Flux<AccountResponse> getAllAccounts() {
         return accountService.getAllAccounts();
     }
 
@@ -77,10 +79,17 @@ public class AccountController {
     public Mono<ResponseEntity<AccountDTO>> updateBalance(
             @PathVariable String id,
             @RequestBody Map<String, BigDecimal> body) {
+
         BigDecimal newBalance = body.get("balance");
+
+        if (newBalance == null) {
+            return Mono.just(ResponseEntity.badRequest().<AccountDTO>build());
+        }
+
         return accountService.updateBalance(id, newBalance)
                 .map(ResponseEntity::ok)
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+                .onErrorResume(AccountCreationException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<AccountDTO>build())
+                );
     }
-
 }

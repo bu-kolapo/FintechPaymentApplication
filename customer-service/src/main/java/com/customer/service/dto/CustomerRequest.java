@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor
 @NoArgsConstructor
 public class CustomerRequest {
@@ -19,8 +19,6 @@ public class CustomerRequest {
     @Id
     private String id;
     private String tenantId;
-    private String idempotencyKey;
-
     private String firstName;
     private String lastName;
     private String email;

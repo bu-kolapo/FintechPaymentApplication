@@ -97,7 +97,6 @@ class CustomerServiceResilienceTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         // Should succeed when circuit breaker is closed
@@ -131,7 +130,6 @@ class CustomerServiceResilienceTest {
                     .phoneNumber("08012345678")
                     .dateOfBirth(LocalDate.of(1990, 1, 1))
                     .status(CustomerRequest.CustomerStatus.ACTIVE)
-                    .idempotencyKey(idempotencyKey)
                     .build();
 
             webTestClient.mutate()
@@ -163,7 +161,6 @@ class CustomerServiceResilienceTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         webTestClient.post()
@@ -186,7 +183,6 @@ class CustomerServiceResilienceTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         // Make request - should succeed within bulkhead limits
@@ -229,7 +225,6 @@ class CustomerServiceResilienceTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         // Should eventually succeed

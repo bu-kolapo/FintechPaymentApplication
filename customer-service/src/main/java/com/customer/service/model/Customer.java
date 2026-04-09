@@ -13,7 +13,7 @@ import java.util.List;
 
 @Document(collection = "customer_db")
 @Data
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor
 @NoArgsConstructor
 public class Customer {

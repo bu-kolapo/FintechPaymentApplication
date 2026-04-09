@@ -81,7 +81,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         webTestClient.post()
@@ -117,7 +116,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08087654321")
                 .dateOfBirth(LocalDate.of(1985, 5, 15))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         // First registration
@@ -158,7 +156,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08011112222")
                 .dateOfBirth(LocalDate.of(1992, 3, 20))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         webTestClient.post()
@@ -196,7 +193,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08033334444")
                 .dateOfBirth(LocalDate.of(1988, 7, 10))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         CustomerResponse created = webTestClient.post()
@@ -244,7 +240,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08055556666")
                 .dateOfBirth(LocalDate.of(1995, 9, 25))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         CustomerResponse created = webTestClient.post()
@@ -293,7 +288,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08077778888")
                 .dateOfBirth(LocalDate.of(1993, 11, 30))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         CustomerResponse created = webTestClient.post()
@@ -346,7 +340,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.ACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         webTestClient.post()
@@ -368,7 +361,6 @@ class CustomerServiceIntegrationTest {
                 .phoneNumber("08012345678")
                 .dateOfBirth(LocalDate.of(1990, 1, 1))
                 .status(CustomerRequest.CustomerStatus.INACTIVE)
-                .idempotencyKey(idempotencyKey)
                 .build();
 
         webTestClient.post()

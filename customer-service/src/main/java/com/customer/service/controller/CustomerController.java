@@ -1,12 +1,13 @@
 package com.customer.service.controller;
 
 
-import com.customer.service.dto.CustomerNotification;
+
 import com.customer.service.dto.CustomerRequest;
 import com.customer.service.dto.CustomerResponse;
 import com.customer.service.exception.CustomerCreationException;
+import com.customer.service.exception.CustomerNotFoundException;
+import com.customer.service.model.Customer;
 import com.customer.service.services.CustomerService;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -15,7 +16,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 
-import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -31,35 +31,17 @@ public class CustomerController {
 
     @PostMapping("/register/customer")
     public Mono<ResponseEntity<CustomerResponse>> registerCustomer(
-            @RequestBody @Valid CustomerRequest request) {
+            @RequestBody CustomerRequest customerRequest,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
 
-        return customerService.registerCustomer(request)
-                // Ensure WebSocket notification happens inside reactive chain
-                .flatMap(response -> {
-                    // Send notification to clients
-                    messagingTemplate.convertAndSend(
-                            "/topic/customers",
-                            new CustomerNotification(
-                                    response.getId(),
-                                    response.getFirstName() + " " + response.getLastName(),
-                                    "CUSTOMER_REGISTERED",
-                                    Instant.now()
-                            )
-                    );
-                    return Mono.just(response); // continue chain
-                })
-                // Map the successful response to ResponseEntity
-                .map(ResponseEntity::ok)
-                // Handle service exceptions and return 400 with error message
+        return customerService.registerCustomer(customerRequest, idempotencyKey)
+                .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response))
+                .onErrorResume(IllegalArgumentException.class, e ->
+                        Mono.just(ResponseEntity.badRequest().<CustomerResponse>build()))
                 .onErrorResume(CustomerCreationException.class, e ->
-                        Mono.just(ResponseEntity
-                                .status(HttpStatus.BAD_REQUEST)
-                                .body(new CustomerResponse(null, e.getMessage()))
-                        )
-                );
+                        Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                .<CustomerResponse>build()));
     }
-
-
 
     @GetMapping("/customer/{id}")
     public Mono<ResponseEntity<CustomerResponse>> getCustomer(@PathVariable String id) {
@@ -75,5 +57,112 @@ public class CustomerController {
             return customerService.getCustomersByTenant(tenantId);
         }
         return customerService.getAllCustomers();
+    }
+
+
+    // ─────────────────────────────────────────────────────────
+    // UPDATE & DELETE
+    // ─────────────────────────────────────────────────────────
+
+    @PutMapping("/customer/{id}")
+    public Mono<ResponseEntity<CustomerResponse>> updateCustomer(
+            @PathVariable String id,
+            @RequestBody CustomerRequest customerRequest) {
+
+        return customerService.updateCustomer(id, customerRequest)
+                .map(ResponseEntity::ok)
+                .onErrorResume(CustomerNotFoundException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<CustomerResponse>build()));
+    }
+
+    @DeleteMapping("/customer/{id}")
+    public Mono<ResponseEntity<Void>> deleteCustomer(@PathVariable String id) {
+        return customerService.deleteCustomer(id)
+                .then(Mono.just(ResponseEntity.noContent().<Void>build()))
+                .onErrorResume(CustomerNotFoundException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<Void>build()));
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // STATUS MANAGEMENT
+    // ─────────────────────────────────────────────────────────
+
+    @PatchMapping("/customer/{id}/deactivate")
+    public Mono<ResponseEntity<CustomerResponse>> deactivateCustomer(@PathVariable String id) {
+        return customerService.deactivateCustomer(id)
+                .map(ResponseEntity::ok)
+                .onErrorResume(CustomerNotFoundException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<CustomerResponse>build()));
+    }
+
+    @PatchMapping("/customer/{id}/activate")
+    public Mono<ResponseEntity<CustomerResponse>> activateCustomer(@PathVariable String id) {
+        return customerService.activateCustomer(id)
+                .map(ResponseEntity::ok)
+                .onErrorResume(CustomerNotFoundException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<CustomerResponse>build()));
+    }
+
+    @GetMapping("/customers/status/{status}")
+    public Flux<CustomerResponse> getCustomersByStatus(
+            @PathVariable Customer.CustomerStatus status) {
+        return customerService.getCustomersByStatus(status);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // LOOKUP
+    // ─────────────────────────────────────────────────────────
+
+    @GetMapping("/customer/email/{email}")
+    public Mono<ResponseEntity<CustomerResponse>> getCustomerByEmail(
+            @PathVariable String email) {
+        return customerService.getCustomerByEmail(email)
+                .map(ResponseEntity::ok)
+                .onErrorResume(CustomerNotFoundException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<CustomerResponse>build()));
+    }
+
+    @GetMapping("/customer/exists/{email}")
+    public Mono<ResponseEntity<Boolean>> existsByEmail(@PathVariable String email) {
+        return customerService.existsByEmail(email)
+                .map(ResponseEntity::ok);
+    }
+
+    @GetMapping("/customers/search")
+    public Flux<CustomerResponse> searchCustomers(
+            @RequestParam String searchTerm) {
+        return customerService.searchCustomers(searchTerm);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // ACCOUNT MANAGEMENT
+    // ─────────────────────────────────────────────────────────
+
+    @DeleteMapping("/customer/{customerId}/account/{accountId}")
+    public Mono<ResponseEntity<CustomerResponse>> removeAccountFromCustomer(
+            @PathVariable Long customerId,
+            @PathVariable String accountId) {
+
+        return customerService.removeAccountFromCustomer(customerId, accountId)
+                .map(ResponseEntity::ok)
+                .onErrorResume(CustomerNotFoundException.class, e ->
+                        Mono.just(ResponseEntity.notFound().<CustomerResponse>build()));
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // STATS
+    // ─────────────────────────────────────────────────────────
+
+    @GetMapping("/customers/count/tenant/{tenantId}")
+    public Mono<ResponseEntity<Long>> countCustomersByTenant(
+            @PathVariable String tenantId) {
+        return customerService.countCustomersByTenant(tenantId)
+                .map(ResponseEntity::ok);
+    }
+
+    @GetMapping("/customers/count/active")
+    public Mono<ResponseEntity<Long>> countActiveCustomers() {
+        return customerService.countActiveCustomers()
+                .map(ResponseEntity::ok);
     }
 }
