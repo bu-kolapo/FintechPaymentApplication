@@ -3,6 +3,8 @@ package com.auth.security.controller;
 import com.auth.security.model.UserAuthentication;
 import com.auth.security.service.LoginServiceImplementation;
 import com.commonlib.util.JwtUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
+@Tag(name = "Authentication", description = "Login endpoint")
 public class AuthController {
 
     private final LoginServiceImplementation userDetailsService;
@@ -24,6 +27,7 @@ public class AuthController {
 
 
         @PostMapping("/login")
+        @Operation(summary = "Login Authentication")
         public Mono<ResponseEntity<Map<String, String>>> login(@RequestBody UserAuthentication userAuthentication) {
 
 

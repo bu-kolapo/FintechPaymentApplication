@@ -120,10 +120,12 @@ public class AccountServiceImpl implements AccountService{
     public Mono<AccountResponse>  getAccountById(String id) {
         return accountRepository.findById(id)
                 .map(accountResponse -> AccountResponse.builder()
+                        .id(accountResponse.getId())
                         .tenantId(accountResponse .getTenantId())         // comes from request or token
                         .customerId(accountResponse .getCustomerId())     // from the Customer
                         .accountNumber(generateAccountNumber())         // generate custom number
                         .currency(accountResponse .getCurrency())
+                        .message(" Details for Customer Id , "+ accountResponse.getId())
                         .openingBalance(accountResponse .getBalance()!= null ? accountResponse .getBalance() : BigDecimal.ZERO)
                         .status(Account.AccountStatus.ACTIVE)
                         .createdAt(Instant.now())

@@ -279,19 +279,19 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     public Flux<CustomerResponse> getAllCustomers() {
         return customerRepository.findAll()
-                .map(customer -> mapToResponse(customer, null));
+                .map(customer -> mapToResponse(customer, " All Customers Retrieved"));
     }
 
     @Override
     public Flux<CustomerResponse> getCustomersByTenant(String tenantId) {
         return customerRepository.findByTenantId(tenantId)
-                .map(customer -> mapToResponse(customer, null));
+                .map(customer -> mapToResponse(customer, " All Customers Retrieved By Tenant"));
     }
 
     @Override
     public Flux<CustomerResponse> getCustomersByStatus(Customer.CustomerStatus status) {
         return customerRepository.findByStatus(status)
-                .map(customer -> mapToResponse(customer, null));
+                .map(customer -> mapToResponse(customer, " All Customers Retrieved By Status"));
     }
 
     @Override
@@ -358,7 +358,7 @@ public class CustomerServiceImpl implements CustomerService {
     public Flux<CustomerResponse> searchCustomers(String searchTerm) {
         return customerRepository.findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
                         searchTerm, searchTerm, searchTerm)
-                .map(customer -> mapToResponse(customer, null));
+                .map(customer -> mapToResponse(customer, " Customers Searched Successfully"));
     }
 
     @Override
