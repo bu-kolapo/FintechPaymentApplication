@@ -8,9 +8,13 @@ import com.customer.service.exception.CustomerCreationException;
 import com.customer.service.exception.CustomerNotFoundException;
 import com.customer.service.model.Customer;
 import com.customer.service.services.CustomerService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -19,6 +23,9 @@ import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/v1")
+@Validated
+@Tag(name = "Customer Registration", description = "Customer management endpoints")
+@SecurityRequirement(name = "Bearer Authentication")
 public class CustomerController {
 
     private final CustomerService customerService;
@@ -30,6 +37,9 @@ public class CustomerController {
     }
 
     @PostMapping("/register/customer")
+    @Operation(
+            summary = "Register a new customer",
+            description = "Creates a new customer. Requires an Idempotency-Key header to prevent duplicate registrations.")
     public Mono<ResponseEntity<CustomerResponse>> registerCustomer(
             @RequestBody CustomerRequest customerRequest,
             @RequestHeader("Idempotency-Key") String idempotencyKey) {
@@ -44,6 +54,7 @@ public class CustomerController {
     }
 
     @GetMapping("/customer/{id}")
+    @Operation(summary = "Get customer by ID")
     public Mono<ResponseEntity<CustomerResponse>> getCustomer(@PathVariable String id) {
         return customerService.getCustomerById(id)
                 .map(ResponseEntity::ok)
@@ -51,6 +62,7 @@ public class CustomerController {
     }
 
     @GetMapping("/customers")
+    @Operation(summary = "Get all customers", description = "Returns all customers. Pass tenantId query param to filter by tenant.")
     public Flux<CustomerResponse> getAllCustomers(
             @RequestParam(required = false) String tenantId) {
         if (tenantId != null) {
@@ -65,6 +77,7 @@ public class CustomerController {
     // ─────────────────────────────────────────────────────────
 
     @PutMapping("/customer/{id}")
+    @Operation(summary = "Update customer")
     public Mono<ResponseEntity<CustomerResponse>> updateCustomer(
             @PathVariable String id,
             @RequestBody CustomerRequest customerRequest) {
@@ -76,6 +89,7 @@ public class CustomerController {
     }
 
     @DeleteMapping("/customer/{id}")
+    @Operation(summary = "Delete customer")
     public Mono<ResponseEntity<Void>> deleteCustomer(@PathVariable String id) {
         return customerService.deleteCustomer(id)
                 .then(Mono.just(ResponseEntity.noContent().<Void>build()))
@@ -88,6 +102,7 @@ public class CustomerController {
     // ─────────────────────────────────────────────────────────
 
     @PatchMapping("/customer/{id}/deactivate")
+    @Operation(summary = "Deactivate customer", description = "Sets customer status to INACTIVE")
     public Mono<ResponseEntity<CustomerResponse>> deactivateCustomer(@PathVariable String id) {
         return customerService.deactivateCustomer(id)
                 .map(ResponseEntity::ok)
@@ -96,6 +111,8 @@ public class CustomerController {
     }
 
     @PatchMapping("/customer/{id}/activate")
+    @Operation(summary = "Activate customer", description = "Sets customer status to ACTIVE")
+
     public Mono<ResponseEntity<CustomerResponse>> activateCustomer(@PathVariable String id) {
         return customerService.activateCustomer(id)
                 .map(ResponseEntity::ok)
@@ -104,6 +121,7 @@ public class CustomerController {
     }
 
     @GetMapping("/customers/status/{status}")
+    @Operation(summary = "Get customers by status", description = "Valid values: ACTIVE, INACTIVE, SUSPENDED")
     public Flux<CustomerResponse> getCustomersByStatus(
             @PathVariable Customer.CustomerStatus status) {
         return customerService.getCustomersByStatus(status);
@@ -114,6 +132,7 @@ public class CustomerController {
     // ─────────────────────────────────────────────────────────
 
     @GetMapping("/customer/email/{email}")
+    @Operation(summary = "Get customer by email")
     public Mono<ResponseEntity<CustomerResponse>> getCustomerByEmail(
             @PathVariable String email) {
         return customerService.getCustomerByEmail(email)
@@ -123,12 +142,15 @@ public class CustomerController {
     }
 
     @GetMapping("/customer/exists/{email}")
+    @Operation(summary = "Check if email is registered")
     public Mono<ResponseEntity<Boolean>> existsByEmail(@PathVariable String email) {
         return customerService.existsByEmail(email)
                 .map(ResponseEntity::ok);
     }
 
     @GetMapping("/customers/search")
+    @Operation(summary = "Search customers", description = "Searches by firstName, lastName, or email containing the search term.")
+
     public Flux<CustomerResponse> searchCustomers(
             @RequestParam String searchTerm) {
         return customerService.searchCustomers(searchTerm);
@@ -139,6 +161,7 @@ public class CustomerController {
     // ─────────────────────────────────────────────────────────
 
     @DeleteMapping("/customer/{customerId}/account/{accountId}")
+    @Operation(summary = "Remove account from customer")
     public Mono<ResponseEntity<CustomerResponse>> removeAccountFromCustomer(
             @PathVariable Long customerId,
             @PathVariable String accountId) {
@@ -154,6 +177,7 @@ public class CustomerController {
     // ─────────────────────────────────────────────────────────
 
     @GetMapping("/customers/count/tenant/{tenantId}")
+    @Operation(summary = "Count customers by tenant")
     public Mono<ResponseEntity<Long>> countCustomersByTenant(
             @PathVariable String tenantId) {
         return customerService.countCustomersByTenant(tenantId)
@@ -161,6 +185,7 @@ public class CustomerController {
     }
 
     @GetMapping("/customers/count/active")
+    @Operation(summary = "Count active customers")
     public Mono<ResponseEntity<Long>> countActiveCustomers() {
         return customerService.countActiveCustomers()
                 .map(ResponseEntity::ok);

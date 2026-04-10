@@ -48,6 +48,8 @@ public class GlobalSecurityConfiguration {
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/api/v1/login", "/api/v1/register/customer").permitAll()
+                        .pathMatchers("/api/v1/login",
+                                "        /api/v1/register/customer,/swagger-ui.html", "/swagger-ui/**", "/webjars/**", "/v3/api-docs", "/v3/api-docs/**", "/api-docs/**", "/api-docs.yaml").permitAll()
                         .anyExchange().authenticated()
                 )
                 .addFilterAt(jwtRequestFilter, SecurityWebFiltersOrder.AUTHENTICATION)
