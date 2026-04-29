@@ -12,37 +12,35 @@ import java.time.Instant;
 
 @Data
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "payment_db")
+@AllArgsConstructor
+@Document(collection = "payments")
 public class Payment {
+
     @Id
     private String id;
-    private String tenantId;
-    private String customerId;
+    private String transactionId;
     private String accountId;
+    private String type;
+    private String sourceAccount;
+    private String tenantId;
+    private Instant processedAt;
+    private String destinationAccount;
+    private String destinationAccountId;
+    private String referenceId; // idempotencyKey
+    private String customerId;
+
     private BigDecimal amount;
     private String currency;
-    private String status;
-    private String reference;
-    private String type;
+    private String narration;
+    private PaymentStatus status;
     private String idempotencyKey;
-    private String transactionId;
-    private String sourceAccount;
-    private String destinationAccount;
     private String debitTransactionId;
     private String creditTransactionId;
+    private Instant initiatedAt;
+    private Instant completedAt;
 
-    private Instant createdAt=Instant.now();
-    private Instant processedAt=Instant.now();
-    private Instant updatedAt;
-
-    // getters and setters
-
-
-   public enum PaymentStatus {
-    PENDING,
-    COMPLETED,
-    FAILED
-   }
+    public enum PaymentStatus {
+        PROCESSING, SUCCESS, FAILED, PENDING
+    }
 }

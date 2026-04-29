@@ -1,5 +1,6 @@
 package com.account.service.services;
 
+import com.account.service.client.CustomerClient;
 import com.account.service.config.RabbitMQConfig;
 import com.account.service.dto.AccountDTO;
 import com.account.service.dto.AccountRequest;
@@ -32,26 +33,28 @@ import java.util.List;
 @Slf4j
 public class AccountServiceImpl implements AccountService{
 
-    private static List<String> available_accountNumbers=new ArrayList<>();
+
 
     private  final AccountRepository accountRepository;
+    private final CustomerClient customerClient;
     private final RabbitTemplate rabbitTemplate;
     @Value("${messaging.enabled:false}")
     private boolean messagingEnabled;
 
     private final IdempotencyService idempotencyService;
 
-    public AccountServiceImpl(AccountRepository accountRepository, RabbitTemplate rabbitTemplate,IdempotencyService idempotencyService) {
+    public AccountServiceImpl(AccountRepository accountRepository, RabbitTemplate rabbitTemplate,IdempotencyService idempotencyService,CustomerClient customerClient) {
         this.accountRepository = accountRepository;
         this.rabbitTemplate =rabbitTemplate;
         this.idempotencyService=idempotencyService;
+        this.customerClient=customerClient;
     }
 
     @Override
     @CircuitBreaker(name = "accountServiceCB", fallbackMethod = "accountFallback")
     @RateLimiter(name = "accountServiceRL")
     public Mono<AccountResponse> createAccount(AccountRequest accountRequest,
-                                               String idempotencyKey) {
+                                               String idempotencyKey,String token) {
 
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return Mono.error(new RuntimeException("Idempotency-Key header is required"));
@@ -63,16 +66,14 @@ public class AccountServiceImpl implements AccountService{
                         return idempotencyService.getResponse(idempotencyKey,
                                 AccountResponse.class);
                     }
-                    return resolveAndCreateAccount(accountRequest, idempotencyKey);
+                    return resolveAndCreateAccount(accountRequest, idempotencyKey,token);
                 })
                 .onErrorMap(e -> new AccountCreationException(
                         "Failed to create account: " + e.getMessage(), e
                 ));
     }
 
-    private Mono<AccountResponse> accountFallback(AccountRequest accountRequest,
-                                                  String idempotencyKey,
-                                                  Throwable ex) {
+    private Mono<AccountResponse> accountFallback(AccountRequest accountRequest, String idempotencyKey,String token, Throwable ex) {
         return Mono.just(
                 AccountResponse.builder()
                         .tenantId(accountRequest.getTenantId())
@@ -85,27 +86,38 @@ public class AccountServiceImpl implements AccountService{
     }
 
     private Mono<AccountResponse> resolveAndCreateAccount(AccountRequest accountRequest,
-                                                          String idempotencyKey) {
-        Account account = Account.builder()
-                .tenantId(accountRequest.getTenantId())
-                .customerId(accountRequest.getCustomerId())
-                .accountNumber(generateAccountNumber())
-                .currency(accountRequest.getCurrency())
-                .balance(accountRequest.getOpeningBalance() != null ? accountRequest.getOpeningBalance(): BigDecimal.ZERO)
-                .status(Account.AccountStatus.ACTIVE)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
+                                                          String idempotencyKey,String token) {
 
-        return accountRepository.save(account)
-                .flatMap(savedAccount -> {
-                    publishAccountCreatedEvent(savedAccount);
+        return customerClient.getCustomerById(accountRequest.getCustomerId(),token) // 👈 FETCH CUSTOMER
+                .flatMap(customer -> generateAccountNumber()
+                        .flatMap(accountNumber -> {
 
-                    AccountResponse response = mapToResponse(savedAccount);
+                            Account account = Account.builder()
+                                    .tenantId(accountRequest.getTenantId())
+                                    .customerId(customer.getId())
+                                    .customerName(customer.getFirstName() + " " + customer.getLastName()) // ✅ FIX HERE
+                                    .accountNumber(accountNumber)
+                                    .currency(accountRequest.getCurrency())
+                                    .balance(accountRequest.getOpeningBalance() != null
+                                            ? accountRequest.getOpeningBalance()
+                                            : BigDecimal.ZERO)
+                                    .status(Account.AccountStatus.ACTIVE)
+                                    .createdAt(Instant.now())
+                                    .updatedAt(Instant.now())
+                                    .build();
 
-                    return idempotencyService.storeResponse(idempotencyKey, response)
-                            .thenReturn(response);
-                });
+                            return accountRepository.save(account)
+                                    .flatMap(savedAccount -> {
+                                        publishAccountCreatedEvent(savedAccount);
+
+                                        AccountResponse response = mapToResponse(savedAccount);
+
+                                        return idempotencyService
+                                                .storeResponse(idempotencyKey, response)
+                                                .thenReturn(response);
+                                    });
+                        })
+                );
     }
 
     private void publishAccountCreatedEvent(Account savedAccount) {
@@ -117,47 +129,38 @@ public class AccountServiceImpl implements AccountService{
     }
 
     @Override
-    public Mono<AccountResponse>  getAccountById(String id) {
+    public Mono<AccountResponse> getAccountById(String id) {
         return accountRepository.findById(id)
-                .map(accountResponse -> AccountResponse.builder()
-                        .id(accountResponse.getId())
-                        .tenantId(accountResponse .getTenantId())         // comes from request or token
-                        .customerId(accountResponse .getCustomerId())     // from the Customer
-                        .accountNumber(generateAccountNumber())         // generate custom number
-                        .currency(accountResponse .getCurrency())
-                        .message(" Details for Customer Id , "+ accountResponse.getId())
-                        .openingBalance(accountResponse .getBalance()!= null ? accountResponse .getBalance() : BigDecimal.ZERO)
-                        .status(Account.AccountStatus.ACTIVE)
-                        .createdAt(Instant.now())
-                        .updatedAt(Instant.now())
+                .map(account -> AccountResponse.builder()
+                        .id(account.getId())
+                        .tenantId(account.getTenantId())
+                        .customerId(account.getCustomerId())
+                        .accountNumber(account.getAccountNumber())
+                        .currency(account.getCurrency())
+                        .message("Details for Customer Id, " + account.getId())
+                        .openingBalance(account.getBalance() != null ? account.getBalance() : BigDecimal.ZERO)
+                        .balance(account.getBalance() != null ? account.getBalance() : BigDecimal.ZERO) // ← add this
+                        .status(account.getStatus())   // ← use actual status, not hardcoded ACTIVE
+                        .createdAt(account.getCreatedAt())   // ← use actual timestamps
+                        .updatedAt(account.getUpdatedAt())   // ← not Instant.now()
                         .build()
                 )
-                .switchIfEmpty(Mono.error(new AccountNotFoundException("Customer not found with id: " + id)));
+                .switchIfEmpty(Mono.error(new AccountNotFoundException("Account not found with id: " + id)));
     }
 
 
 
+    public Mono<String> generateAccountNumber() {
+        String accountNumber = RandomStringUtils.randomNumeric(10);
 
-    public String generateAccountNumber() {
-        String accountNumberGenerated = RandomStringUtils.randomNumeric(10);
-        if (available_accountNumbers.contains(accountNumberGenerated)) {
-            generateAccountNumber();
-        } else {
-            available_accountNumbers.add(accountNumberGenerated);
-        }
-
-        return accountNumberGenerated;
+        return accountRepository.existsByAccountNumber(accountNumber)
+                .flatMap(exists -> {
+                    if (exists) {
+                        return generateAccountNumber(); // retry
+                    }
+                    return Mono.just(accountNumber);
+                });
     }
-
-//    public static String generateAccountNumber() {
-//        // Example: generate a 10-digit numeric account number
-//        return RandomStringUtils.randomNumeric(10);
-//    }
-//
-//    public static String generateTenantId() {
-//        // Example: random alphanumeric tenant ID
-//        return RandomStringUtils.randomAlphanumeric(8).toUpperCase();
-//    }
 
 
     // Helper method to publish events with error handling
@@ -179,30 +182,40 @@ public class AccountServiceImpl implements AccountService{
         return AccountResponse.builder()
                 .id(account.getId())
                 .tenantId(account.getTenantId())
-                .accountNumber(generateAccountNumber())
+                .accountNumber(account.getAccountNumber())
                 .currency(account.getCurrency())
+                .balance(account.getBalance())
                 .openingBalance(account.getBalance()!= null ? account.getBalance() : BigDecimal.ZERO)
+                .message("Account Opening for Customer " + account.getCustomerName())
                 .status(account.getStatus())
                 .createdAt(account.getCreatedAt())
                 .updatedAt(account.getUpdatedAt())
+                .customerName(account.getCustomerName())
                 .customerId(account.getCustomerId())
                 .build();
     }
 
-    @PostConstruct
-    public void testRabbit() {
-        try {
-            rabbitTemplate.convertAndSend("account-exchange", "account.created", "Hello Test");
-            System.out.println("✅ Test message sent to RabbitMQ");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+//    @PostConstruct
+//    public void testRabbit() {
+//        try {
+//            rabbitTemplate.convertAndSend("account-exchange", "account.created", "Hello Test");
+//            System.out.println("✅ Test message sent to RabbitMQ");
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//    }
 
     @Override
     public Flux<AccountResponse> getAccountsByTenant(String tenantId) {
         return accountRepository.findByTenantId(tenantId)
                 .map(account -> mapToResponse(account));
+    }
+    @Override
+    public Mono<AccountResponse> getAccountByNumber(String accountNumber) {
+        return accountRepository.findByAccountNumber(accountNumber)
+                .switchIfEmpty(Mono.error(
+                        new RuntimeException("Account not found: " + accountNumber)))
+                .map(this::mapToResponse);
     }
 
     @Override
@@ -210,7 +223,7 @@ public class AccountServiceImpl implements AccountService{
         return accountRepository.findAll()
                 .map(account -> mapToResponse(account));
     }
-
+    @Override
     public Mono<AccountDTO> updateBalance(String accountId, BigDecimal newBalance) {
         return accountRepository.findById(accountId)
                 .flatMap(account -> {

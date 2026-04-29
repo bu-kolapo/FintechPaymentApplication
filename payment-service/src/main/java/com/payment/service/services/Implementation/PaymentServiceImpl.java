@@ -1,15 +1,22 @@
+
 package com.payment.service.services.Implementation;
 
 import com.commonlib.service.IdempotencyService;
+
+import com.payment.service.dto.DebitRequest;
+import com.payment.service.messaging.client.AccountClient;
+import com.payment.service.dto.AccountDTO;
 import com.payment.service.dto.PaymentRequest;
+import com.payment.service.messaging.event.TransactionRequestEvent;
+import com.payment.service.messaging.producer.PaymentProducer;
 import com.payment.service.model.Payment;
-import com.payment.service.model.Transaction;
-import com.payment.service.publisher.PaymentEventPublisher;
+import com.payment.service.messaging.publisher.PaymentEventPublisher;
 import com.payment.service.repository.PaymentRepository;
 import com.payment.service.services.NotificationService;
 import com.payment.service.services.PaymentService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -17,136 +24,185 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 
-@Service
-public class PaymentServiceImpl implements PaymentService {
+    @Service
+    @Slf4j
+    public class PaymentServiceImpl implements PaymentService {
 
-    private final PaymentRepository repository;
-    private  final IdempotencyService idempotencyService;
-    private final RabbitTemplate rabbitTemplate;
-    private final NotificationService notificationService;
-    private final PaymentEventPublisher eventPublisher;
+        private final PaymentRepository repository;
+        private final IdempotencyService idempotencyService;
+        private final RabbitTemplate rabbitTemplate;
+        private final NotificationService notificationService;
+        private final PaymentEventPublisher eventPublisher;
+        private final PaymentProducer paymentProducer;
+        private final AccountClient accountClient;
 
-    public PaymentServiceImpl(PaymentRepository repository,IdempotencyService idempotencyService,
-                              RabbitTemplate rabbitTemplate,NotificationService notificationService,PaymentEventPublisher eventPublisher) {
-        this.repository = repository;
-        this.idempotencyService=idempotencyService;
-        this.rabbitTemplate=rabbitTemplate;
-        this.notificationService=notificationService;
-        this.eventPublisher=eventPublisher;
-    }
-    @Override
-    public Flux<Payment> getAllPayments() {
-        return repository.findAll();
-    }
-   @Override
-    public Mono<Payment> getPaymentById(String id) {
-        return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Payment not found")));
-    }
-    @Override
-    @CircuitBreaker(name = "paymentServiceCB", fallbackMethod = "paymentFallback")
-    @RateLimiter(name = "paymentServiceRL")
-    public Mono<Payment> savePayment(Payment payment) {
-        String key = payment.getIdempotencyKey();
-        if (key == null || key.isBlank()) {
-            return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
+
+        public PaymentServiceImpl(PaymentRepository repository, IdempotencyService idempotencyService, RabbitTemplate rabbitTemplate, NotificationService notificationService,
+                                  PaymentProducer paymentProducer,PaymentEventPublisher eventPublisher, AccountClient accountClient) {
+            this.repository = repository;
+            this.idempotencyService = idempotencyService;
+            this.rabbitTemplate = rabbitTemplate;
+            this.notificationService = notificationService;
+            this.eventPublisher = eventPublisher;
+            this.accountClient = accountClient;
+            this.paymentProducer=paymentProducer;
+
         }
 
-        // 1️⃣ Check Redis
-        return idempotencyService.exists(key)
-                .flatMap(exists -> {
-                    if (exists) {
-                        return idempotencyService.getResponse(key, Payment.class);
-                    }
-
-                    // 2️⃣ Save payment normally
-                    return repository.save(payment)
-                            // 3️⃣ Store result in Redis
-                            .flatMap(savedPayment -> idempotencyService.storeResponse(key, savedPayment)
-                                    .thenReturn(savedPayment));
-                });
-    }
-
-    @Override
-    public Mono<Payment> processPayment(PaymentRequest paymentRequest) {
-
-        String key = paymentRequest.getIdempotencyKey();
-
-        if (key == null || key.isBlank()) {
-            return Mono.error(new RuntimeException("❌ idempotencyKey is required"));
+        @Override
+        public Flux<Payment> getAllPayments() {
+            return repository.findAll();
         }
 
-        // 1️⃣ Check idempotency
-        return idempotencyService.exists(key).flatMap(exists -> {
-            if (exists) {
-                return idempotencyService.getResponse(key, Payment.class);
+        @Override
+        public Mono<Payment> getPaymentById(String id) {
+            return repository.findById(id)
+                    .switchIfEmpty(Mono.error(
+                            new RuntimeException("Payment not found with id: " + id)));
+        }
+
+        @Override
+        @CircuitBreaker(name = "paymentServiceCB", fallbackMethod = "processPaymentFallback")
+        @RateLimiter(name = "paymentServiceRL")
+        public Mono<Payment> processPayment(PaymentRequest request, String idempotencyKey, String token) {
+
+            validateRequest(request, idempotencyKey);
+
+            return idempotencyService.exists(idempotencyKey)
+                    .flatMap(exists -> {
+                        if (exists) {
+                            return idempotencyService.getResponse(idempotencyKey, Payment.class);
+                        }
+                        return resolveAccountsAndInitiate(request, idempotencyKey, token);
+                    });
+        }
+
+        private void validateRequest(PaymentRequest request, String idempotencyKey) {
+
+            if (idempotencyKey == null || idempotencyKey.isBlank()) {
+                throw new RuntimeException("Idempotency-Key header is required");
             }
 
-            // 2️⃣ Publish debit request to RabbitMQ
-            return sendDebitRequest(paymentRequest)
-                    .flatMap(debitTxn -> sendCreditRequest(paymentRequest)
-                            .flatMap(creditTxn -> savePaymentRecord(paymentRequest, debitTxn, creditTxn))
-                    );
-        });
+            if (request.getSourceAccount().equals(request.getDestinationAccount())) {
+                throw new RuntimeException("Source and destination accounts cannot be the same");
+            }
+
+            if (request.getCustomerId() == null || request.getTenantId() == null) {
+                throw new RuntimeException("customerId and tenantId are required");
+            }
+        }
+        private Mono<Payment> resolveAccountsAndInitiate(PaymentRequest request,
+                                                         String idempotencyKey,
+                                                         String token) {
+
+            return Mono.zip(
+                    accountClient.getAccountByNumber(request.getSourceAccount(), token),
+                    accountClient.getAccountByNumber(request.getDestinationAccount(), token)
+            ).flatMap(tuple -> {
+
+                AccountDTO source = tuple.getT1();
+                AccountDTO destination = tuple.getT2();
+
+                validateAccounts(request, source, destination);
+
+                return initiatePayment(request, idempotencyKey, source, destination,token);
+            });
+        }
+        private Mono<Payment> initiatePayment(PaymentRequest request,
+                                              String idempotencyKey,
+                                              AccountDTO source,
+                                              AccountDTO destination, String token) {
+
+            Payment payment = Payment.builder()
+                    .sourceAccount(request.getSourceAccount())
+                    .destinationAccount(request.getDestinationAccount())
+                    .destinationAccountId(destination.getId())
+                    .accountId(source.getId())
+                    .narration("Payment Initiated")
+                    .amount(request.getAmount())
+                    .currency(request.getCurrency())
+                    .customerId(request.getCustomerId())
+                    .tenantId(request.getTenantId())
+                    .type("TRANSFER")
+                    .idempotencyKey(idempotencyKey)
+                    .referenceId(idempotencyKey)
+                    .status(Payment.PaymentStatus.PENDING)
+                    .initiatedAt(Instant.now())
+                    .build();
+
+            return repository.save(payment)
+                    .flatMap(saved -> {
+
+                        // ✅ Use a strong, consistent event
+                        DebitRequest debit = new DebitRequest(
+                                saved.getAccountId(),
+                                saved.getAmount(),
+                                saved.getTenantId(),
+                                saved.getIdempotencyKey() ,  // 🔥 critical
+                                token
+                        );
+
+                        // ✅ USE YOUR PRODUCER (single source of truth)
+                        paymentProducer.sendDebitRequest(debit);
+
+                        log.info("📤 Debit request sent | paymentId={} | idempotencyKey={}",
+                                saved.getId(), saved.getIdempotencyKey());
+
+                        return idempotencyService.storeResponse(idempotencyKey, saved)
+                                .thenReturn(saved);
+                    });
+        }
+        private void validateAccounts(PaymentRequest request,
+                                      AccountDTO source,
+                                      AccountDTO destination) {
+
+            // Ownership check
+            if (!source.getCustomerId().equals(request.getCustomerId())) {
+                throw new RuntimeException(
+                        "Source account does not belong to customer: " + request.getCustomerId());
+            }
+
+            // Status checks
+            if (!"ACTIVE".equalsIgnoreCase(source.getStatus())) {
+                throw new RuntimeException("Source account is not active");
+            }
+
+            if (!"ACTIVE".equalsIgnoreCase(destination.getStatus())) {
+                throw new RuntimeException("Destination account is not active");
+            }
+
+            // Currency validation
+            if (!source.getCurrency().equalsIgnoreCase(destination.getCurrency())) {
+                throw new RuntimeException(
+                        "Currency mismatch: source=" + source.getCurrency() +
+                                ", destination=" + destination.getCurrency());
+            }
+
+            // Tenant validation
+            if (!source.getTenantId().equals(destination.getTenantId())) {
+                throw new RuntimeException("Cross-tenant transfer not allowed");
+            }
+        }
+
+        // Fallback — must mirror processPayment signature + Throwable
+        private Mono<Payment> processPaymentFallback(PaymentRequest request, String idempotencyKey, String token ,Throwable ex) {
+            log.error("⚡ Circuit breaker triggered for key: {}, reason: {}",
+                    idempotencyKey, ex.getMessage());
+
+            Payment fallback = Payment.builder()
+                    .sourceAccount(request.getSourceAccount())
+                    .destinationAccount(request.getDestinationAccount())
+                    .amount(request.getAmount())
+                    .currency(request.getCurrency())
+                    .customerId(request.getCustomerId())
+                    .tenantId(request.getTenantId())
+                    .idempotencyKey(idempotencyKey)
+                    .referenceId(idempotencyKey)
+                    .status(Payment.PaymentStatus.FAILED)
+                    .narration("Payment temporarily unavailable: " + ex.getMessage())
+                    .initiatedAt(Instant.now())
+                    .build();
+
+            return Mono.just(fallback);
+        }
     }
-
-    @Override
-    public Mono<Payment> paymentFallback(PaymentRequest request, Throwable ex) {
-        return Mono.error(new RuntimeException("Payment failed: " + ex.getMessage()));
-    }
-
-    private Mono<Transaction> sendDebitRequest(PaymentRequest request) {
-        Transaction debitTxn = new Transaction();
-        debitTxn.setAccountId(request.getSourceAccount());
-        debitTxn.setAmount(request.getAmount());
-        debitTxn.setType(Transaction.TransactionType.DEBIT);
-        debitTxn.setIdempotencyKey(request.getIdempotencyKey() + "-debit");
-
-        // Publish debit request to RabbitMQ
-        rabbitTemplate.convertAndSend("transaction.exchange", "debit.request", debitTxn);
-
-        // Here you would listen for a debit-completed event asynchronously
-        return Mono.create(sink -> {
-            // Example placeholder: when TransactionService publishes debit completed, complete the sink
-            // sink.success(debitTxn);
-        });
-    }
-
-    private Mono<Transaction> sendCreditRequest(PaymentRequest request) {
-        Transaction creditTxn = new Transaction();
-        creditTxn.setAccountId(request.getDestinationAccount());
-        creditTxn.setAmount(request.getAmount());
-        creditTxn.setType(Transaction.TransactionType.CREDIT);
-        creditTxn.setIdempotencyKey(request.getIdempotencyKey() + "-credit");
-
-        // Publish credit request to RabbitMQ
-        rabbitTemplate.convertAndSend("transaction.exchange", "credit.request", creditTxn);
-
-        // Listen for credit-completed event asynchronously
-        return Mono.create(sink -> {
-            // Placeholder: when TransactionService publishes credit completed, complete the sink
-            // sink.success(creditTxn);
-        });
-    }
-
-    private Mono<Payment> savePaymentRecord(PaymentRequest req, Transaction debitTxn, Transaction creditTxn) {
-        Payment payment = new Payment();
-        payment.setSourceAccount(req.getSourceAccount());
-        payment.setDestinationAccount(req.getDestinationAccount());
-        payment.setAmount(req.getAmount());
-        payment.setDebitTransactionId(debitTxn.getId());
-        payment.setCreditTransactionId(creditTxn.getId());
-        payment.setStatus("SUCCESS");
-        payment.setProcessedAt(Instant.now());
-
-        return repository.save(payment)
-                .flatMap(saved ->
-                        eventPublisher.publishPaymentCompleted(saved)
-                                .then(notificationService.notifyUser(saved))
-                                .thenReturn(saved)
-                );
-    }
-
-
-}
-

@@ -1,4 +1,4 @@
-package com.transaction.service.event;
+package com.transaction.service.messaging.event;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

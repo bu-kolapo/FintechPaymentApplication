@@ -1,44 +1,43 @@
 package com.payment.service.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 
 @Data
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 public class PaymentRequest {
 
-    private String id;
-    private String tenantId;
+    @NotBlank(message = "customerId is required")
     private String customerId;
+
     private String accountId;
-    private BigDecimal amount;
-    private String currency;
-    private String status;
-    private String reference;
+
+    @NotBlank(message = "tenantId is required")
+    private String tenantId;
+
+    @NotBlank(message = "Source account is required")
     private String sourceAccount;
+
+    @NotBlank(message = "Destination account is required")
     private String destinationAccount;
-    private String type;
-    private String idempotencyKey;
-    private String transactionId;
 
-    private Instant createdAt=Instant.now();
-    private Instant processedAt=Instant.now();
-    private Instant updatedAt;
+    @NotNull(message = "Amount is required")
+    @DecimalMin(value = "0.01", message = "Amount must be greater than 0")
+    private BigDecimal amount;
 
-    // getters and setters
+    @NotBlank(message = "Currency is required")
+    private String currency;
 
+    private String narration;
+    private String token;
 
-    public enum PaymentStatus {
-        PENDING,
-        COMPLETED,
-        FAILED
-    }
 }

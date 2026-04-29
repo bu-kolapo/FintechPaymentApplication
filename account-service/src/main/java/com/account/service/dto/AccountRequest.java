@@ -18,6 +18,7 @@ public class AccountRequest {
     private String tenantId;
     private String customerId;
     private String currency;
+    private String accountNumber;
     private BigDecimal openingBalance;
 
     // getters and setters

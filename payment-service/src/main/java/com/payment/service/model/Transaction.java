@@ -26,6 +26,7 @@ public class Transaction {
     private String id;
     private String tenantId;
     private String accountId;
+    private String customerId;
     private String idempotencyKey;
     private TransactionType type;
     private BigDecimal amount;
@@ -33,6 +34,7 @@ public class Transaction {
     private String description;
     private Instant processedAt;
     private Instant createdAt;
+
 
     // getters and setters
 

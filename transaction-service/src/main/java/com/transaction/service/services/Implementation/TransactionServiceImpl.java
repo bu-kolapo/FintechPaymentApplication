@@ -1,13 +1,10 @@
 package com.transaction.service.services.Implementation;
 
 import com.commonlib.service.IdempotencyService;
-import com.transaction.service.client.AccountClient;
-import com.transaction.service.config.RabbitMQConfig;
-import com.transaction.service.dto.AccountDTO;
+import com.transaction.service.messaging.client.AccountClient;
 import com.transaction.service.dto.TransactionResponse;
-import com.transaction.service.event.TransactionCompletedEvent;
 import com.transaction.service.model.Transaction;
-import com.transaction.service.publisher.TransactionEventPublisher;
+import com.transaction.service.messaging.publisher.TransactionEventPublisher;
 import com.transaction.service.repository.TransactionRepository;
 import com.transaction.service.services.TransactionService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -20,10 +17,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -37,32 +31,31 @@ public class TransactionServiceImpl implements TransactionService {
 
     private final IdempotencyService idempotencyService;
 
+    @Override
+    @CircuitBreaker(name = "transactionServiceCB", fallbackMethod = "transactionFallback")
+    @RateLimiter(name = "transactionServiceRL")
+    public Mono<TransactionResponse> processTransaction(Transaction transaction, String idempotencyKey, String token) {
+        log.info("🔑 Token received in processTransaction: {}", token); // ← add this
+        log.info("📦 AccountId: {}", transaction.getAccountId());
 
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Mono.error(new RuntimeException("Idempotency-Key header is required"));
+        }
 
+        return idempotencyService.exists(idempotencyKey)
+                .flatMap(exists -> {
 
-//    public TransactionServiceImpl(TransactionRepository transactionRepository, RabbitTemplate rabbitTemplate,AccountClient accountClient,TransactionEventPublisher eventPublisher) {
-//        this.transactionRepository = transactionRepository;
-//        this.rabbitTemplate = rabbitTemplate;
-//        this.accountClient=accountClient;
-//        this.eventPublisher=eventPublisher;
-//    }
-    //single-account ledger operation
-@Override
-@CircuitBreaker(name = "transactionServiceCB", fallbackMethod = "transactionFallback")
-@RateLimiter(name = "transactionServiceRL")
-public Mono<TransactionResponse> processTransaction(Transaction transaction) {
-    String key = transaction.getIdempotencyKey();
+                    // ✅ Idempotency: return stored response
+                    if (exists) {
+                        return idempotencyService.getResponse(idempotencyKey, TransactionResponse.class);
+                    }
 
-    return idempotencyService.exists(key)
-            .flatMap(exists -> {
-                if (exists) {
-                    return idempotencyService.getResponse(key, TransactionResponse.class);
-                }
+                    // ✅ Continue processing
+                    return accountClient.getAccountById(transaction.getAccountId(), token)
+                            .flatMap(accountDTO -> {
 
-                return accountClient.getAccountById(transaction.getAccountId())
-                        .flatMap(accountDTO -> {
-                            BigDecimal currentBalance = accountDTO.getBalance();
-                            BigDecimal txnAmount = transaction.getAmount();
+                                BigDecimal currentBalance = accountDTO.getBalance();
+                                BigDecimal txnAmount = transaction.getAmount();
 
                             // Handle DEBIT logic
                             if (transaction.getType() == Transaction.TransactionType.DEBIT
@@ -85,7 +78,7 @@ public Mono<TransactionResponse> processTransaction(Transaction transaction) {
                                         .message("Transaction failed: Insufficient funds")
                                         .build();
 
-                                return idempotencyService.storeResponse(key, failedResponse)
+                                return idempotencyService.storeResponse(idempotencyKey, failedResponse)
                                         .thenReturn(failedResponse);
                             }
 
@@ -95,10 +88,11 @@ public Mono<TransactionResponse> processTransaction(Transaction transaction) {
                                     : currentBalance.add(txnAmount);
 
                             transaction.setStatus(Transaction.TransactionStatus.SUCCESS);
+                            transaction.setIdempotencyKey(idempotencyKey);
                             transaction.setProcessedAt(Instant.now());
 
                             // Update account balance via WebClient
-                            return accountClient.updateAccountBalance(transaction.getAccountId(), newBalance)
+                            return accountClient.updateAccountBalance(transaction.getAccountId(), newBalance,token)
                                     .then(transactionRepository.save(transaction))
                                     .map(savedTxn -> TransactionResponse.builder()
                                             .id(savedTxn.getId())
@@ -113,7 +107,7 @@ public Mono<TransactionResponse> processTransaction(Transaction transaction) {
                                             .createdAt(savedTxn.getCreatedAt())
                                             .message("Transaction processed successfully")
                                             .build())
-                                    .flatMap(response -> idempotencyService.storeResponse(key, response)
+                                    .flatMap(response -> idempotencyService.storeResponse(idempotencyKey, response)
                                             .thenReturn(response))
                                     .doOnSuccess(eventPublisher::publishTransactionCompleted);
                         });
@@ -125,7 +119,7 @@ public Mono<TransactionResponse> processTransaction(Transaction transaction) {
 
 
 
-    public Mono<Transaction> transactionFallback(Transaction request, Throwable throwable) {
+    public Mono<Transaction> transactionFallback(Transaction request, String idempotencyKey, String token, Throwable throwable) {
         Transaction fallbackTransaction = new Transaction();
         fallbackTransaction.setId(request.getId());
         fallbackTransaction.setAccountId(request.getAccountId());

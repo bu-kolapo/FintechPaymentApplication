@@ -10,15 +10,18 @@ import reactor.core.publisher.Mono;
 @Repository
 public interface PaymentRepository extends ReactiveMongoRepository<Payment,String> {
 
-        Mono<Payment> findByTransactionId(String transactionId);
+        Mono<Payment> findByIdempotencyKey(String idempotencyKey);
 
 
-        Mono<Payment> findByTenantIdAndId(String tenantId, String id);
+//        Mono<Payment> findByTenantIdAndId(String tenantId, String id);
+//
+//        Flux<Payment> findByTenantIdAndAccountId(String tenantId, String accountId);
+//
+//        Flux<Payment> findByTenantIdAndCustomerId(String tenantId, String customerId);
+//
+//        Flux<Payment> findByAccountId(String accountId);
+//        Flux<Payment> findByStatus(Payment.PaymentStatus status);
+//        Mono<Payment> findByIdempotencyKey(String idempotencyKey);
+//        Flux<Payment> findBySourceAccount(String sourceAccount);
 
-        Flux<Payment> findByTenantIdAndAccountId(String tenantId, String accountId);
-
-        Flux<Payment> findByTenantIdAndCustomerId(String tenantId, String customerId);
-
-        Flux<Payment> findByAccountId(String accountId);
-        Flux<Payment> findByStatus(Payment.PaymentStatus status);
 }

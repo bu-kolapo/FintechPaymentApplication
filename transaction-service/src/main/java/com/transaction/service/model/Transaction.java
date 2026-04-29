@@ -27,6 +27,7 @@ public class Transaction {
     private String tenantId;
     private String accountId;
     private String idempotencyKey;
+    private String token;
 
     private TransactionType type;
     private BigDecimal amount;

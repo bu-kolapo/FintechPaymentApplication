@@ -1,4 +1,4 @@
-package com.transaction.service.event;
+package com.payment.service.messaging.event;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -12,10 +12,13 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class TransactionCompletedEvent implements Serializable {
     private String transactionId;
+    private String idempotencyKey;
     private String accountId;
     private BigDecimal amount;
     private String type; // e.g. CREDIT or DEBIT
     private String status; // e.g. SUCCESS or FAILED
     private String tenantId;
     private long timestamp;
+
+
 }

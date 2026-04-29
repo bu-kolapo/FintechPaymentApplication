@@ -19,10 +19,12 @@ public class AccountResponse {
     private String id;
     private String tenantId;
     private String customerId;
+    private String customerName;
     private String accountNumber;
     private String currency;
     private String message;
     private BigDecimal openingBalance;
+    private BigDecimal balance;
     private Account.AccountStatus status;
     private Instant createdAt;
     private Instant updatedAt;

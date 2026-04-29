@@ -1,30 +1,21 @@
-package com.transaction.service.dto;
+package com.transaction.service.messaging.event;
 
 import com.transaction.service.model.Transaction;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 
 @Data
-@Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public  class TransactionResponse {
-    private String id;
+public class TransactionRequestEvent {
     private String accountId;
-    private String idempotencyKey;
     private BigDecimal amount;
+    private String tenantId;
     private Transaction.TransactionType type;
     private Transaction.TransactionStatus status;
-    private String tenantId;
+    private String idempotencyKey;
     private String token;
-    private String description;
-    private String message;
-    private Instant processedAt;
-    private Instant createdAt;
-
 }

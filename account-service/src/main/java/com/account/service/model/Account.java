@@ -21,6 +21,7 @@ public class Account {
     private String id;
     private String tenantId;
     private String customerId;
+    private String customerName;
 
     private String accountNumber;
     private String currency;

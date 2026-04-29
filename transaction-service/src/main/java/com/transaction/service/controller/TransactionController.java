@@ -3,6 +3,7 @@ package com.transaction.service.controller;
 import com.transaction.service.dto.TransactionResponse;
 import com.transaction.service.model.Transaction;
 import com.transaction.service.services.TransactionService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -22,8 +23,8 @@ public class TransactionController {
     // ✅ Create a new transaction
     @PostMapping(value = ("/transactions"),produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public Mono<TransactionResponse> createTransaction(@RequestBody Transaction transaction) {
-        return transactionService.processTransaction(transaction);
+    public Mono<TransactionResponse> createTransaction(@RequestBody Transaction transaction, @RequestHeader("Idempotency-Key")String idempotencyKey, @RequestHeader(HttpHeaders.AUTHORIZATION) String token){
+        return transactionService.processTransaction(transaction,idempotencyKey,token);
     }
 
     // ✅ Get all transactions

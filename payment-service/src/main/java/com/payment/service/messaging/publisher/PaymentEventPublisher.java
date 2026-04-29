@@ -1,4 +1,4 @@
-package com.payment.service.publisher;
+package com.payment.service.messaging.publisher;
 
 import com.payment.service.model.Payment;
 import reactor.core.publisher.Mono;

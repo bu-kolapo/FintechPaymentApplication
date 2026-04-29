@@ -1,69 +1,67 @@
 package com.transaction.service.config;
 
-
+import com.transaction.service.messaging.Queues.QueueConstants;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
-
 
 @Configuration
 public class RabbitMQConfig {
 
-    public static final String EXCHANGE_NAME = "transaction-exchange";
-    public static final String ROUTING_KEY = "transaction.completed";
-    public static final String QUEUE_NAME = "transaction-completed-queue";
-
-    public static final String TRANSACTION_EXCHANGE = "transactions-exchange";
-    public static final String PAYMENT_QUEUE_NAME = "payment-service-queue";
-    public static final String TRANSACTION_ROUTING_KEY = "transactions.created";
-
     @Bean
-    public DirectExchange transactionExchange() {
-        return new DirectExchange(EXCHANGE_NAME);
+    public DirectExchange exchange() {
+        return new DirectExchange(QueueConstants.EXCHANGE); // "payment-exchange"
+    }
+
+    // --- Queues transaction-service LISTENS to ---
+    @Bean
+    public Queue debitRequestQueue() {
+        return new Queue(QueueConstants.DEBIT_REQUEST_QUEUE, true);
     }
 
     @Bean
-    @Primary
-    public Queue transactionQueue() {
-        return new Queue(QUEUE_NAME, true);
+    public Queue creditRequestQueue() {
+        return new Queue(QueueConstants.CREDIT_REQUEST_QUEUE, true);
+    }
+
+    // --- Queues transaction-service PUBLISHES to ---
+    @Bean
+    public Queue debitResponseQueue() {
+        return new Queue(QueueConstants.DEBIT_RESPONSE_QUEUE, true);
     }
 
     @Bean
-    public Binding binding(Queue transactionQueue, DirectExchange transactionExchange) {
-        return BindingBuilder.bind(transactionQueue)
-                .to(transactionExchange)
-                .with(ROUTING_KEY);
+    public Queue creditResponseQueue() {
+        return new Queue(QueueConstants.CREDIT_RESPONSE_QUEUE, true);
     }
 
     @Bean
-    public Jackson2JsonMessageConverter jackson2JsonMessageConverter() {
+    public Binding debitResponseBinding() {
+        return BindingBuilder.bind(debitResponseQueue())
+                .to(exchange())
+                .with(QueueConstants.DEBIT_RESPONSE);
+    }
+
+    @Bean
+    public Binding creditResponseBinding() {
+        return BindingBuilder.bind(creditResponseQueue())
+                .to(exchange())
+                .with(QueueConstants.CREDIT_RESPONSE);
+    }
+
+    @Bean
+    public MessageConverter messageConverter() {
         return new Jackson2JsonMessageConverter();
     }
 
-//    @Bean
-//    @Primary
-//    public DirectExchange transactionNameExchange() {
-//        return new DirectExchange(TRANSACTION_EXCHANGE);
-//    }
     @Bean
-    public TopicExchange transactionsExchange() {
-        return new TopicExchange(TRANSACTION_EXCHANGE, true, false);
-    }
-
-    @Bean
-    public Queue PaymentQueue() {
-        return new Queue(PAYMENT_QUEUE_NAME, true);
-    }
-
-    @Bean
-    public Binding transactionBinding(@Qualifier("transactionQueue") Queue queue,
-                                       DirectExchange exchange) {
-        return BindingBuilder.bind(queue).to(exchange).with(TRANSACTION_ROUTING_KEY);
+    public AmqpTemplate amqpTemplate(ConnectionFactory connectionFactory) {
+        RabbitTemplate template = new RabbitTemplate(connectionFactory);
+        template.setMessageConverter(messageConverter());
+        return template;
     }
 }

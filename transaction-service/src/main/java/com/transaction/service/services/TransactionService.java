@@ -8,7 +8,7 @@ import reactor.core.publisher.Mono;
 
 public interface TransactionService {
 
-    Mono<TransactionResponse> processTransaction(Transaction transaction);
+    Mono<TransactionResponse> processTransaction(Transaction transaction, String idempotencyKey, String token);
     Flux<Transaction> getAllTransactions();
     Flux<Transaction> getTransactionsByAccountId(String accountId);
     Mono<Transaction> getTransactionById(String id);

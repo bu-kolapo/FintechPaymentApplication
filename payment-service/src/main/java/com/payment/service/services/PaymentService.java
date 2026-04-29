@@ -8,8 +8,6 @@ import reactor.core.publisher.Mono;
 public interface PaymentService {
     Flux<Payment> getAllPayments();
     Mono<Payment> getPaymentById(String id);
-    Mono<Payment> processPayment(PaymentRequest paymentRequest);
-    Mono<Payment> paymentFallback(PaymentRequest request, Throwable ex);
-    Mono<Payment> savePayment(Payment payment);
+    Mono<Payment> processPayment(PaymentRequest request, String idempotencyKey, String token);
 
 }

@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -44,9 +45,10 @@ public class AccountController {
             description = "Create an account using  customerId. Requires an Idempotency-Key header to prevent duplicate creations.")
     public Mono<ResponseEntity<AccountResponse>> createAccount(
             @RequestBody @Valid AccountRequest accountRequest,
-            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String token){
 
-        return accountService.createAccount(accountRequest, idempotencyKey)
+        return accountService.createAccount(accountRequest, idempotencyKey,token)
                 .doOnSuccess(response ->
                         messagingTemplate.convertAndSend(
                                 "/topic/accounts",
@@ -104,5 +106,14 @@ public class AccountController {
                 .onErrorResume(AccountCreationException.class, e ->
                         Mono.just(ResponseEntity.notFound().<AccountDTO>build())
                 );
+    }
+
+    @GetMapping("/accounts/number/{accountNumber}")
+    @Operation(summary = "Get account by account number")
+    public Mono<ResponseEntity<AccountResponse>> getAccountByAccountNumber(
+            @PathVariable String accountNumber) {
+        return accountService.getAccountByNumber(accountNumber)
+                .map(ResponseEntity::ok)
+                .onErrorReturn(ResponseEntity.notFound().build());
     }
 }
