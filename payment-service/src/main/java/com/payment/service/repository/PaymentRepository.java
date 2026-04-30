@@ -11,6 +11,8 @@ import reactor.core.publisher.Mono;
 public interface PaymentRepository extends ReactiveMongoRepository<Payment,String> {
 
         Mono<Payment> findByIdempotencyKey(String idempotencyKey);
+        Mono<Payment> findByReferenceId(String referenceId);
+        Mono<Payment> findFirstByReferenceId(String referenceId);
 
 
 //        Mono<Payment> findByTenantIdAndId(String tenantId, String id);

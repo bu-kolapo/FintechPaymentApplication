@@ -2,6 +2,7 @@ package com.payment.service.controller;
 
 import com.payment.service.dto.PaymentRequest;
 import com.payment.service.model.Payment;
+import com.payment.service.services.PaymentOrchestrator;
 import com.payment.service.services.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,9 +20,11 @@ import reactor.core.publisher.Mono;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentOrchestrator paymentOrchestrator;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(PaymentService paymentService,PaymentOrchestrator paymentOrchestrator) {
         this.paymentService = paymentService;
+        this.paymentOrchestrator=paymentOrchestrator;
     }
 
     @PostMapping("/payment/process")
@@ -34,7 +37,7 @@ public class PaymentController {
             @RequestBody @Valid PaymentRequest request,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String token) {
-        return paymentService.processPayment(request, idempotencyKey, token)
+        return paymentOrchestrator.process(request, idempotencyKey, token)
                 .map(payment -> ResponseEntity.status(HttpStatus.CREATED).body(payment));
     }
 

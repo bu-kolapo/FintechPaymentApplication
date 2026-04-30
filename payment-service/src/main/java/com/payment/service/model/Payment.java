@@ -34,13 +34,21 @@ public class Payment {
     private String currency;
     private String narration;
     private PaymentStatus status;
+    private ExternalStatus externalStatus;
     private String idempotencyKey;
     private String debitTransactionId;
     private String creditTransactionId;
+    private String externalTransactionId;
+    private String externalStatusMessage;
     private Instant initiatedAt;
     private Instant completedAt;
 
     public enum PaymentStatus {
-        PROCESSING, SUCCESS, FAILED, PENDING
+        PROCESSING, SUCCESS, FAILED, PENDING,REVERSED
+    }
+
+    public enum ExternalStatus {
+        SUCCESS,
+        FAILED
     }
 }

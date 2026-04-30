@@ -15,10 +15,9 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CreditRequest {
 
-    private String destinationAccount;
-    private String accountId;
+    private String accountId;      // destination account to credit
     private BigDecimal amount;
-    private String referenceId;
+    private String tenantId;
     private String idempotencyKey;
     private String token;
 }

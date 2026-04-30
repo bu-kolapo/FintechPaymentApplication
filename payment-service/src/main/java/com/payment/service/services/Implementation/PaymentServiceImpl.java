@@ -13,20 +13,22 @@ import com.payment.service.model.Payment;
 import com.payment.service.messaging.publisher.PaymentEventPublisher;
 import com.payment.service.repository.PaymentRepository;
 import com.payment.service.services.NotificationService;
+import com.payment.service.services.PaymentProcessor;
 import com.payment.service.services.PaymentService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 
-    @Service
+    @Service("internalPaymentProcessor")
     @Slf4j
-    public class PaymentServiceImpl implements PaymentService {
+    public class PaymentServiceImpl implements PaymentService , PaymentProcessor {
 
         private final PaymentRepository repository;
         private final IdempotencyService idempotencyService;
@@ -35,10 +37,13 @@ import java.time.Instant;
         private final PaymentEventPublisher eventPublisher;
         private final PaymentProducer paymentProducer;
         private final AccountClient accountClient;
+        private final InterbankPaymentServiceImpl interbankProcessor;
+
 
 
         public PaymentServiceImpl(PaymentRepository repository, IdempotencyService idempotencyService, RabbitTemplate rabbitTemplate, NotificationService notificationService,
-                                  PaymentProducer paymentProducer,PaymentEventPublisher eventPublisher, AccountClient accountClient) {
+                                  PaymentProducer paymentProducer,PaymentEventPublisher eventPublisher, AccountClient accountClient,
+      InterbankPaymentServiceImpl interbankProcessor) {
             this.repository = repository;
             this.idempotencyService = idempotencyService;
             this.rabbitTemplate = rabbitTemplate;
@@ -46,6 +51,8 @@ import java.time.Instant;
             this.eventPublisher = eventPublisher;
             this.accountClient = accountClient;
             this.paymentProducer=paymentProducer;
+            this.interbankProcessor=interbankProcessor;
+
 
         }
 
@@ -94,20 +101,42 @@ import java.time.Instant;
         private Mono<Payment> resolveAccountsAndInitiate(PaymentRequest request,
                                                          String idempotencyKey,
                                                          String token) {
-
             return Mono.zip(
                     accountClient.getAccountByNumber(request.getSourceAccount(), token),
                     accountClient.getAccountByNumber(request.getDestinationAccount(), token)
             ).flatMap(tuple -> {
-
                 AccountDTO source = tuple.getT1();
                 AccountDTO destination = tuple.getT2();
 
+                // ✅ validate for both flows — ownership, status, currency
                 validateAccounts(request, source, destination);
 
-                return initiatePayment(request, idempotencyKey, source, destination,token);
+                boolean crossTenant = !source.getTenantId().equals(destination.getTenantId());
+
+                if (crossTenant) {
+                    log.info("🔀 Cross-tenant detected → INTERBANK route");
+                    return interbankProcessor.processInternalOrInterBankPayment(
+                            request, idempotencyKey, token, source, destination);
+                }
+
+                log.info("🔀 Same tenant → INTERNAL route");
+                return initiatePayment(request, idempotencyKey, source, destination, token);
             });
         }
+
+//            return Mono.zip(
+//                    accountClient.getAccountByNumber(request.getSourceAccount(), token),
+//                    accountClient.getAccountByNumber(request.getDestinationAccount(), token)
+//            ).flatMap(tuple -> {
+//
+//                AccountDTO source = tuple.getT1();
+//                AccountDTO destination = tuple.getT2();
+//
+//                validateAccounts(request, source, destination);
+//
+//                return initiatePayment(request, idempotencyKey, source, destination,token);
+//            });
+
         private Mono<Payment> initiatePayment(PaymentRequest request,
                                               String idempotencyKey,
                                               AccountDTO source,
@@ -118,7 +147,7 @@ import java.time.Instant;
                     .destinationAccount(request.getDestinationAccount())
                     .destinationAccountId(destination.getId())
                     .accountId(source.getId())
-                    .narration("Payment Initiated")
+                    .narration(request.getNarration())
                     .amount(request.getAmount())
                     .currency(request.getCurrency())
                     .customerId(request.getCustomerId())
@@ -177,11 +206,11 @@ import java.time.Instant;
                         "Currency mismatch: source=" + source.getCurrency() +
                                 ", destination=" + destination.getCurrency());
             }
-
-            // Tenant validation
-            if (!source.getTenantId().equals(destination.getTenantId())) {
-                throw new RuntimeException("Cross-tenant transfer not allowed");
-            }
+//
+//            // Tenant validation
+//            if (!source.getTenantId().equals(destination.getTenantId())) {
+//                throw new RuntimeException("Cross-tenant transfer not allowed");
+//            }
         }
 
         // Fallback — must mirror processPayment signature + Throwable
@@ -204,5 +233,10 @@ import java.time.Instant;
                     .build();
 
             return Mono.just(fallback);
+        }
+
+        @Override
+        public Mono<Payment> processInternalOrInterBankPayment(PaymentRequest request, String idempotencyKey, String token, AccountDTO source, AccountDTO destination) {
+            return processPayment(request, idempotencyKey, token);
         }
     }
