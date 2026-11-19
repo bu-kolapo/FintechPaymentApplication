@@ -18,10 +18,10 @@ public class AccountDTO {
     private String id;
     private String tenantId;
     private String customerId;
-
     private String accountNumber;
     private String currency;
     private BigDecimal balance;
+    private BigDecimal amount;
     private Account.AccountStatus status;
 
     private Instant createdAt;

@@ -135,6 +135,7 @@ public class AccountServiceImpl implements AccountService{
                         .id(account.getId())
                         .tenantId(account.getTenantId())
                         .customerId(account.getCustomerId())
+                        .customerName(account.getCustomerName())
                         .accountNumber(account.getAccountNumber())
                         .currency(account.getCurrency())
                         .message("Details for Customer Id, " + account.getId())
@@ -169,8 +170,7 @@ public class AccountServiceImpl implements AccountService{
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.EXCHANGE_NAME,
                     RabbitMQConfig.ROUTING_KEY,
-                    event
-            );
+                    event);
             System.out.println("Published event: " + eventType + " for Customer " + event.getCustomerId());
         } catch (Exception e) {
             System.err.println("Error publishing event: " + e.getMessage());
@@ -182,6 +182,7 @@ public class AccountServiceImpl implements AccountService{
         return AccountResponse.builder()
                 .id(account.getId())
                 .tenantId(account.getTenantId())
+                .customerName(account.getCustomerName())
                 .accountNumber(account.getAccountNumber())
                 .currency(account.getCurrency())
                 .balance(account.getBalance())
@@ -223,14 +224,22 @@ public class AccountServiceImpl implements AccountService{
         return accountRepository.findAll()
                 .map(account -> mapToResponse(account));
     }
+
     @Override
-    public Mono<AccountDTO> updateBalance(String accountId, BigDecimal newBalance) {
+    public Mono<AccountDTO> updateBalance(String accountId, BigDecimal amountToAdd) {
+
         return accountRepository.findById(accountId)
                 .flatMap(account -> {
-                    account.setBalance(newBalance);
+
+                    BigDecimal currentBalance = account.getBalance();
+
+                    BigDecimal updatedBalance = currentBalance.add(amountToAdd);
+
+                    account.setBalance(updatedBalance);
+
                     return accountRepository.save(account);
                 })
-                .map(this::toDTO); // convert entity to DTO
+                .map(this::toDTO);
     }
 
     private AccountDTO toDTO(Account account) {
@@ -246,7 +255,6 @@ public class AccountServiceImpl implements AccountService{
                 .updatedAt(account.getUpdatedAt())
                 .build();
     }
-
 }
 
 

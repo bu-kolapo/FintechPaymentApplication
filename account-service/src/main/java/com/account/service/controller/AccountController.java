@@ -89,23 +89,22 @@ public class AccountController {
         return accountService.getAllAccounts();
     }
 
+
+
     @PatchMapping("/account/{id}/balance")
-    @Operation(summary = "Get  update accountBalance by ID")
+    @Operation(summary = "Add amount to account balance")
     public Mono<ResponseEntity<AccountDTO>> updateBalance(
             @PathVariable String id,
             @RequestBody Map<String, BigDecimal> body) {
 
-        BigDecimal newBalance = body.get("balance");
+        BigDecimal amount = body.get("amount");
 
-        if (newBalance == null) {
-            return Mono.just(ResponseEntity.badRequest().<AccountDTO>build());
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Mono.just(ResponseEntity.badRequest().build());
         }
 
-        return accountService.updateBalance(id, newBalance)
-                .map(ResponseEntity::ok)
-                .onErrorResume(AccountCreationException.class, e ->
-                        Mono.just(ResponseEntity.notFound().<AccountDTO>build())
-                );
+        return accountService.updateBalance(id, amount)
+                .map(ResponseEntity::ok);
     }
 
     @GetMapping("/accounts/number/{accountNumber}")
